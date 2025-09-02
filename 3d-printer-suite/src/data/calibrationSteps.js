@@ -9,6 +9,27 @@ export const calibrationSteps = [
     title: 'PID Autotune',
     description: 'Calibrate the PID values for your hotend and bed to achieve stable temperatures',
     category: 'Temperature',
+    videoUrl: 'https://www.youtube.com/watch?v=APzJfYAgFkQ',
+    instructions: [
+      'Preheat the hotend and bed to approximate target temperatures.',
+      'Ensure no filament is loaded or disable extrusion during tuning.',
+      'Run PID autotune for the hotend and bed (if supported).',
+      'Save the tuned PID values to EEPROM with M500.',
+      'Test stability during a small print.'
+    ],
+    visualAids: [
+      // { imageUrl: '/images/pid_graph.png', caption: 'Stable temperature curve after tuning' }
+    ],
+    commonIssues: [
+      { issue: 'Temperature oscillates after tuning', solution: 'Increase cycles or re-run autotune closer to operating temp.' },
+      { issue: 'Heater fault during tuning', solution: 'Lower target temperature, ensure thermistor contact, check wiring.' }
+    ],
+    expectedOutcomes: 'Stable temperature traces with minimal overshoot (≤2°C) and fast settling time.',
+    checklist: [
+      'Printer powered and idle',
+      'Thermistors connected and reading correctly',
+      'Nozzle clear and safe (no filament required)'
+    ],
     inputs: [
       {
         type: 'number',
@@ -69,6 +90,27 @@ export const calibrationSteps = [
     title: 'Extruder E-Steps Calibration',
     description: 'Calibrate the extruder steps per mm to ensure accurate filament extrusion',
     category: 'Movement',
+    videoUrl: 'https://www.youtube.com/watch?v=7tCxO17XZtw',
+    instructions: [
+      'Heat the hotend to printing temperature (e.g., 200°C).',
+      'Mark filament at 120mm from the extruder entry.',
+      'Extrude 100mm of filament using controlled feed.',
+      'Measure remaining distance to entry to find actual extruded amount.',
+      'Compute new E-steps = (Current E-steps × Requested) ÷ Actual.'
+    ],
+    visualAids: [
+      // { imageUrl: '/images/esteps_mark.jpg', caption: 'Mark filament at 120mm for measurement' }
+    ],
+    commonIssues: [
+      { issue: 'Under-extrusion', solution: 'Increase E-steps using measured actual extrusion.' },
+      { issue: 'Slipping', solution: 'Increase idler tension, clean drive gear, slow extrusion speed.' }
+    ],
+    expectedOutcomes: 'Extrusion distances match requested within ±1mm over 100mm.',
+    checklist: [
+      'Hotend heated to target temperature',
+      'Filament loaded and feeding',
+      'Extruder gear clean and tension set'
+    ],
     inputs: [
       {
         type: 'number',
@@ -147,6 +189,24 @@ export const calibrationSteps = [
     title: 'Retraction Tuning',
     description: 'Optimize retraction settings to eliminate stringing and oozing',
     category: 'Quality',
+    videoUrl: 'https://www.youtube.com/watch?v=Z2hZKx9F9_s',
+    instructions: [
+      'Load a stringing test model or use generated test moves.',
+      'Start with moderate retraction and speed.',
+      'Observe stringing between towers and adjust values.',
+      'Repeat until stringing is minimized without causing jams.'
+    ],
+    visualAids: [],
+    commonIssues: [
+      { issue: 'Stringing persists', solution: 'Increase retraction distance and/or temperature tuning; enable coasting.' },
+      { issue: 'Grinding/jams', solution: 'Reduce retraction speed and distance; check path and PTFE.' }
+    ],
+    expectedOutcomes: 'Minimal or no stringing; clean travel moves; no filament grinding.',
+    checklist: [
+      'Hotend clean and free of debris',
+      'Filament dry and within spec',
+      'Nozzle temperature verified'
+    ],
     inputs: [
       {
         type: 'number',
@@ -235,6 +295,24 @@ export const calibrationSteps = [
     title: 'First Layer Calibration',
     description: 'Calibrate the first layer height and bed leveling for perfect adhesion',
     category: 'Quality',
+    videoUrl: 'https://www.youtube.com/watch?v=Kj4x1P1R3sE',
+    instructions: [
+      'Clean the build surface and remove residue.',
+      'Home all axes and level bed using ABL or manual paper method.',
+      'Adjust Z-offset while printing a first-layer test.',
+      'Inspect line width, squish, and adhesion; adjust as needed.'
+    ],
+    visualAids: [],
+    commonIssues: [
+      { issue: 'Poor adhesion', solution: 'Increase bed temp, clean surface, adjust Z-offset lower (closer).' },
+      { issue: 'Elephant foot', solution: 'Lower bed temp slightly, raise first layer Z-offset, add chamfer.' }
+    ],
+    expectedOutcomes: 'Uniform, slightly squished lines with consistent width and strong adhesion.',
+    checklist: [
+      'Bed is clean and free of oils',
+      'Nozzle is clean',
+      'Bed leveling completed'
+    ],
     inputs: [
       {
         type: 'number',
@@ -329,6 +407,24 @@ export const calibrationSteps = [
     title: 'Flow Rate Calibration',
     description: 'Calibrate the flow rate to achieve accurate wall thickness and dimensions',
     category: 'Quality',
+    videoUrl: 'https://www.youtube.com/watch?v=3-p7u0qv2bM',
+    instructions: [
+      'Print a single-wall cube or use a generated line.',
+      'Measure wall thickness accurately with calipers.',
+      'Compute new flow = expected × current ÷ actual.',
+      'Apply new flow and re-test.'
+    ],
+    visualAids: [],
+    commonIssues: [
+      { issue: 'Walls too thin', solution: 'Increase flow rate or check extrusion path for leaks.' },
+      { issue: 'Walls too thick', solution: 'Decrease flow rate; verify nozzle diameter and slicer settings.' }
+    ],
+    expectedOutcomes: 'Measured wall thickness within ±0.02 mm of expected for single-wall test.',
+    checklist: [
+      'Calipers available and zeroed',
+      'Nozzle diameter known and configured',
+      'Single-wall model sliced with correct width'
+    ],
     inputs: [
       {
         type: 'number',
@@ -398,6 +494,22 @@ export const calibrationSteps = [
     title: 'Temperature Tower',
     description: 'Find the optimal printing temperature for your filament',
     category: 'Temperature',
+    videoUrl: 'https://www.youtube.com/watch?v=0Y2YxYf-7xU',
+    instructions: [
+      'Slice a temperature tower with scripted temperature changes.',
+      'Print the model and note artifacts at each temperature.',
+      'Select the range with best surface quality and bridging.'
+    ],
+    visualAids: [],
+    commonIssues: [
+      { issue: 'Poor bridging in all segments', solution: 'Increase cooling, reduce speed, and adjust temperature lower.' }
+    ],
+    expectedOutcomes: 'A selected temperature range with crisp details, minimal stringing, and strong layer adhesion.',
+    checklist: [
+      'Cooling fan functional',
+      'Stable filament feed',
+      'Bed adhesion consistent'
+    ],
     inputs: [
       {
         type: 'number',

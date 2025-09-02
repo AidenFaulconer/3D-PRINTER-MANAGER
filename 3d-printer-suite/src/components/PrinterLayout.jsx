@@ -1,16 +1,29 @@
-import { useState } from 'react'
-import { ArrowLeft, Settings, Printer, CheckCircle, Circle, Home, Wrench, Thermometer, Ruler, Zap, FileText } from 'lucide-react'
+import { useState, useMemo } from 'react'
+import useSerialConnection from '../hooks/useSerialConnection'
+import { ArrowLeft, Settings, Printer, CheckCircle, Circle, Home, Wrench, Thermometer, Ruler, Zap, FileText, AlertTriangle, TerminalSquare, SlidersHorizontal } from 'lucide-react'
 import usePrintersStore from '../stores/printersStore'
 import PrinterConfig from './PrinterConfig'
 import FirmwareConfig from './FirmwareConfig'
 import CalibrationStep from './CalibrationStep'
+import IssueTracker from './IssueTracker'
+import ProfileManagement from './ProfileManagement'
+import MaterialManagement from './MaterialManagement'
+import SerialPanel from './SerialPanel'
+import PrinterControlPanel from './PrinterControlPanel'
 import { calibrationSteps, getCalibrationStep } from '../data/calibrationSteps'
 
 const PrinterLayout = ({ onBackToDashboard }) => {
   const [selectedStep, setSelectedStep] = useState('config')
   const { activePrinterId, getActivePrinter } = usePrintersStore()
+  const { status: serialStatus, sendCommand } = useSerialConnection()
   
   const activePrinter = getActivePrinter()
+  
+  // Memoize serial props to prevent unnecessary re-renders
+  const serialProps = useMemo(() => ({
+    serialStatus,
+    sendCommand
+  }), [serialStatus, sendCommand])
 
   // Create navigation steps including the new calibration steps
   const navigationSteps = [
@@ -22,11 +35,51 @@ const PrinterLayout = ({ onBackToDashboard }) => {
       component: PrinterConfig
     },
     {
+      id: 'profiles',
+      name: 'Profiles',
+      icon: FileText,
+      description: 'Manage slicer profiles (create, import, export)',
+      component: ProfileManagement,
+      category: 'Profiles'
+    },
+    {
+      id: 'materials',
+      name: 'Materials',
+      icon: FileText,
+      description: 'Manage materials and link to profiles',
+      component: MaterialManagement,
+      category: 'Profiles'
+    },
+    {
       id: 'firmwareConfig',
       name: 'Firmware Configuration',
       icon: FileText,
       description: 'Parse and analyze Marlin firmware files',
       component: FirmwareConfig
+    },
+    {
+      id: 'control',
+      name: 'Control',
+      icon: SlidersHorizontal,
+      description: 'Manual control for movement, temperatures, extrusion, and more',
+      component: PrinterControlPanel,
+      category: 'Diagnostics'
+    },
+    {
+      id: 'serial',
+      name: 'Terminal',
+      icon: TerminalSquare,
+      description: 'USB serial connection and G-code terminal',
+      component: SerialPanel,
+      category: 'Diagnostics'
+    },
+    {
+      id: 'issueTracker',
+      name: 'Issue Tracker',
+      icon: AlertTriangle,
+      description: 'Track and manage printer issues and diagnostics',
+      component: IssueTracker,
+      category: 'Diagnostics'
     },
     ...calibrationSteps.map(step => ({
       id: step.id,
@@ -35,7 +88,7 @@ const PrinterLayout = ({ onBackToDashboard }) => {
             step.category === 'Movement' ? Wrench :
             step.category === 'Quality' ? Settings : Zap,
       description: step.description,
-      component: () => <CalibrationStep step={step} onComplete={handleCalibrationComplete} />,
+      component: () => <CalibrationStep step={step} onComplete={handleCalibrationComplete} {...serialProps} />,
       category: step.category
     }))
   ]

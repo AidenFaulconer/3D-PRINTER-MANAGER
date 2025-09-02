@@ -15,17 +15,22 @@ export function parseMarlinConfig(configText, isAdvanced = false) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim()
     
-    // Skip empty lines and pure comment lines
-    if (!line || line.startsWith('//') || line.startsWith('/*')) {
+    // Skip empty lines and pure comment lines (but not commented #define lines)
+    if (!line || (line.startsWith('//') && !line.includes('#define')) || line.startsWith('/*')) {
       continue
     }
 
-    // Look for #define directives
-    let match = line.match(/^(?:\/\/)?#define\s+([A-Za-z0-9_]+)\s*(.*)/)
+    // Look for #define directives (including commented out ones)
+    // This regex handles:
+    // #define NAME value
+    // //#define NAME value  
+    // // #define NAME value
+    // //  #define NAME value
+    let match = line.match(/^(\s*\/\/\s*)?#define\s+([A-Za-z0-9_]+)\s*(.*)/)
     
     if (match) {
-      const [, name, rest] = match
-      const isCommentedOut = line.startsWith('//')
+      const [, commentPrefix, name, rest] = match
+      const isCommentedOut = !!commentPrefix
       
       // Extract value and description
       let value = ''
@@ -36,7 +41,10 @@ export function parseMarlinConfig(configText, isAdvanced = false) {
         const parts = rest.split(/(?:\/\/|\/\*)/)
         const valuePart = parts[0].trim()
         
-        if (valuePart) {
+                // For commented defines, the value might be empty or different
+        if (isCommentedOut && !valuePart) {
+          value = false // Default to false for commented defines with no value
+        } else if (valuePart) {
           // Handle different value types
           if (valuePart === 'true' || valuePart === 'false') {
             value = valuePart === 'true'
@@ -83,6 +91,11 @@ export function parseMarlinConfig(configText, isAdvanced = false) {
         }
       }
 
+      // Debug logging for commented defines
+      if (isCommentedOut) {
+        console.log(`Found commented define: ${name} (line ${i + 1})`)
+      }
+      
       configs.push({
         name,
         value,
@@ -94,6 +107,11 @@ export function parseMarlinConfig(configText, isAdvanced = false) {
     }
   }
 
+  // Log parsing summary
+  const enabledCount = configs.filter(c => c.enabled).length
+  const disabledCount = configs.filter(c => !c.enabled).length
+  console.log(`Parsed ${configs.length} defines: ${enabledCount} enabled, ${disabledCount} disabled`)
+  
   return configs
 }
 
