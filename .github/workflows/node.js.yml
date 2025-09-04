@@ -25,8 +25,14 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-    - run: cd 3d-printer-suite
-    - run: npm ci
-    - run: npm run build --if-present
-    - run: npm test
+        cache: 'yarn'
+        cache-dependency-path: 3d-printer-suite/yarn.lock
+    - name: Install dependencies
+      run: yarn install --frozen-lockfile
+      working-directory: 3d-printer-suite
+    - name: Build
+      run: yarn build
+      working-directory: 3d-printer-suite
+    - name: Test
+      run: yarn test
+      working-directory: 3d-printer-suite

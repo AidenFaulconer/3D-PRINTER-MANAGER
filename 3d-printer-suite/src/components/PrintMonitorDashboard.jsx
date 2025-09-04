@@ -68,7 +68,7 @@ const PrintMonitorDashboard = () => {
     return (
       <div className="p-4">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold">Print Monitor</h2>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Print Monitor</h2>
           <button
             onClick={handleBackToControl}
             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
@@ -76,7 +76,7 @@ const PrintMonitorDashboard = () => {
             Back to Control Panel
           </button>
         </div>
-        <div className="text-center text-gray-500 py-8">
+        <div className="text-center text-gray-500 dark:text-gray-400 py-8">
           <p className="text-lg mb-2">No active print</p>
           <p className="text-sm">Start a print from the control panel to monitor its progress here.</p>
         </div>
@@ -89,7 +89,7 @@ const PrintMonitorDashboard = () => {
   return (
     <div className="p-4">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-bold">Print Monitor</h2>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Print Monitor</h2>
         <button
           onClick={handleBackToControl}
           className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
@@ -112,8 +112,8 @@ const PrintMonitorDashboard = () => {
         </div>
 
         {/* Print Controls */}
-        <div className="bg-white rounded-lg shadow p-4 space-y-4">
-          <h3 className="text-lg font-semibold">Print Controls</h3>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 space-y-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Print Controls</h3>
           
           {/* Basic Controls */}
           <div className="flex space-x-2">
@@ -176,13 +176,13 @@ const PrintMonitorDashboard = () => {
       {/* Right column - Print status and info */}
       <div className="space-y-4">
         {/* Print Progress */}
-        <div className="bg-white rounded-lg shadow p-4">
-          <h3 className="text-lg font-semibold mb-4">Print Progress</h3>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+          <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Print Progress</h3>
           
           <div className="space-y-4">
             {/* Progress bar */}
             <div>
-              <div className="flex justify-between text-sm text-gray-500 mb-1">
+              <div className="flex justify-between text-sm text-gray-500 dark:text-gray-400 mb-1">
                 <span>{Math.round(activePrint.progress)}%</span>
                 <span>Layer {Math.floor(activePrint.progress * file?.layerCount || 0)} / {file?.layerCount}</span>
               </div>
@@ -197,13 +197,13 @@ const PrintMonitorDashboard = () => {
             {/* Time information */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-sm text-gray-500">Elapsed Time</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Elapsed Time</p>
                 <p className="font-medium">
                   {startTime ? formatTime((new Date() - startTime) / 1000) : '--:--:--'}
                 </p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">Remaining Time</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400">Remaining Time</p>
                 <p className="font-medium">
                   {formatTime(estimatedTimeRemaining)}
                 </p>
@@ -213,14 +213,14 @@ const PrintMonitorDashboard = () => {
         </div>
 
         {/* Temperature Monitor */}
-        <div className="bg-white rounded-lg shadow p-4">
-          <h3 className="text-lg font-semibold mb-4">Temperatures</h3>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+          <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Temperatures</h3>
           
           <div className="space-y-4">
             {/* Hotend temperature */}
             <div>
               <div className="flex justify-between mb-1">
-                <span className="text-sm text-gray-500">Hotend</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">Hotend</span>
                 <span className="text-sm font-medium">
                   {temperatures.hotend?.current}°C / {temperatures.hotend?.target}°C
                 </span>
@@ -238,7 +238,7 @@ const PrintMonitorDashboard = () => {
             {/* Bed temperature */}
             <div>
               <div className="flex justify-between mb-1">
-                <span className="text-sm text-gray-500">Bed</span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">Bed</span>
                 <span className="text-sm font-medium">
                   {temperatures.bed?.current}°C / {temperatures.bed?.target}°C
                 </span>
@@ -256,33 +256,33 @@ const PrintMonitorDashboard = () => {
         </div>
 
         {/* Position Monitor */}
-        <div className="bg-white rounded-lg shadow p-4">
-          <h3 className="text-lg font-semibold mb-4">Position</h3>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+          <h3 className="text-lg font-semibold mb-4 text-gray-900 dark:text-white">Position</h3>
           
           <div className="grid grid-cols-4 gap-4">
             <div>
-              <p className="text-sm text-gray-500">X</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">X</p>
               <p className="font-medium">{printerState.position.x.toFixed(2)}mm</p>
             </div>
             <div>
-              <p className="text-sm text-gray-500">Y</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Y</p>
               <p className="font-medium">{printerState.position.y.toFixed(2)}mm</p>
             </div>
             <div>
-              <p className="text-sm text-gray-500">Z</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Z</p>
               <p className="font-medium">{printerState.position.z.toFixed(2)}mm</p>
             </div>
             <div>
-              <p className="text-sm text-gray-500">E</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">E</p>
               <p className="font-medium">{printerState.position.e.toFixed(2)}mm</p>
             </div>
           </div>
         </div>
 
         {/* Bed Leveling Visualization */}
-        <div className="bg-white rounded-lg shadow p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold">Bed Leveling</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Bed Leveling</h3>
             <button 
               onClick={() => sendCommand('M503')}
               className="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"

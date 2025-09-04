@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Plus, Printer, CheckCircle, Circle, Settings, Trash2, Database } from 'lucide-react'
 import usePrintersStore from '../stores/printersStore'
 import { samplePrinters } from '../data/samplePrinters'
+import Logo from './Logo'
+import ThemeToggle from './ThemeToggle'
 
 const PrinterDashboard = ({ onPrinterSelect }) => {
   const [showAddForm, setShowAddForm] = useState(false)
@@ -70,16 +72,17 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-white dark:bg-gray-800 dark:bg-gray-900">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b">
+      <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
-              <Printer className="h-8 w-8 text-blue-600 mr-3" />
-              <h1 className="text-2xl font-bold text-gray-900">3D Printer Suite</h1>
+              <Logo className="h-8 w-8 mr-3" />
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">3D Printer Suite</h1>
             </div>
-            <div className="flex space-x-3">
+            <div className="flex items-center space-x-3">
+              <ThemeToggle />
               <button
                 onClick={handleLoadSampleData}
                 className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 transition-colors flex items-center space-x-2"
@@ -95,7 +98,7 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
               </button>
               <button
                 onClick={() => setShowAddForm(!showAddForm)}
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-white px-4 py-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center space-x-2"
               >
                 <Plus className="h-4 w-4" />
                 <span>Add New Printer</span>
@@ -108,11 +111,11 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Add Printer Form */}
         {showAddForm && (
-          <div className="bg-white rounded-lg shadow p-6 mb-8">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Add New Printer</h2>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-8">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Add New Printer</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Printer Name *
                 </label>
                 <input
@@ -120,17 +123,17 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
                   placeholder="e.g., My Ender 3"
                   value={newPrinter.name}
                   onChange={(e) => setNewPrinter({ ...newPrinter, name: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Model *
                 </label>
                 <select
                   value={newPrinter.model}
                   onChange={(e) => setNewPrinter({ ...newPrinter, model: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-white"
                 >
                   <option value="">Select Model</option>
                   {printerModels.map(model => (
@@ -139,13 +142,13 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Firmware
                 </label>
                 <select
                   value={newPrinter.firmware}
                   onChange={(e) => setNewPrinter({ ...newPrinter, firmware: e.target.value })}
-                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-white"
                 >
                   <option value="">Select Firmware</option>
                   {firmwareOptions.map(firmware => (
@@ -154,7 +157,7 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                   Bed Size (mm)
                 </label>
                 <div className="grid grid-cols-3 gap-2">
@@ -166,7 +169,7 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
                       ...newPrinter,
                       bedSize: { ...newPrinter.bedSize, x: parseInt(e.target.value) || 0 }
                     })}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                   <input
                     type="number"
@@ -176,7 +179,7 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
                       ...newPrinter,
                       bedSize: { ...newPrinter.bedSize, y: parseInt(e.target.value) || 0 }
                     })}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                   <input
                     type="number"
@@ -186,7 +189,7 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
                       ...newPrinter,
                       bedSize: { ...newPrinter.bedSize, z: parseInt(e.target.value) || 0 }
                     })}
-                    className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-800 dark:bg-gray-700 text-gray-900 dark:text-white"
                   />
                 </div>
               </div>
@@ -194,14 +197,14 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
             <div className="flex justify-end space-x-3 mt-4">
               <button
                 onClick={() => setShowAddForm(false)}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+                className="px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleAddPrinter}
                 disabled={!newPrinter.name || !newPrinter.model}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-white rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Add Printer
               </button>
@@ -212,12 +215,12 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
         {/* Printers Grid */}
         {printers.length === 0 ? (
           <div className="text-center py-12">
-            <Printer className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No Printers Added</h3>
-            <p className="text-gray-500 mb-4">Get started by adding your first 3D printer</p>
+            <Printer className="h-16 w-16 text-gray-300 dark:text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No Printers Added</h3>
+            <p className="text-gray-500 dark:text-gray-400 mb-4">Get started by adding your first 3D printer</p>
             <button
               onClick={() => setShowAddForm(true)}
-              className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 transition-colors flex items-center space-x-2 mx-auto"
+              className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-white px-6 py-3 rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center space-x-2 mx-auto"
             >
               <Plus className="h-4 w-4" />
               <span>Add Your First Printer</span>
@@ -225,41 +228,41 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
           </div>
         ) : (
           <div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">Your Printers</h2>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">Your Printers</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {printers.map((printer) => (
                 <div
                   key={printer.id}
-                  className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
+                  className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow cursor-pointer"
                   onClick={() => handlePrinterSelect(printer.id)}
                 >
                   <div className="p-6">
                     <div className="flex justify-between items-start mb-4">
                       <div className="flex items-center">
-                        <Printer className="h-6 w-6 text-blue-600 mr-2" />
-                        <h3 className="text-lg font-semibold text-gray-900">{printer.name}</h3>
+                        <Printer className="h-6 w-6 text-gray-600 dark:text-gray-300 mr-2" />
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{printer.name}</h3>
                       </div>
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
                           deletePrinter(printer.id)
                         }}
-                        className="text-gray-400 hover:text-red-500 transition-colors p-1"
+                        className="text-gray-400 dark:text-gray-500 dark:text-gray-400 hover:text-red-500 transition-colors p-1"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </div>
                     
                     <div className="space-y-2 mb-4">
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-gray-600 dark:text-gray-300">
                         <span className="font-medium">Model:</span> {printer.model}
                       </p>
                       {printer.firmware && (
-                        <p className="text-sm text-gray-600">
+                        <p className="text-sm text-gray-600 dark:text-gray-300">
                           <span className="font-medium">Firmware:</span> {printer.firmware}
                         </p>
                       )}
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm text-gray-600 dark:text-gray-300">
                         <span className="font-medium">Bed Size:</span> {printer.bedSize.x} × {printer.bedSize.y} × {printer.bedSize.z} mm
                       </p>
                     </div>
@@ -267,14 +270,14 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
                     {/* Calibration Progress */}
                     <div className="border-t pt-4">
                       <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-medium text-gray-700">Calibration Progress</span>
-                        <span className="text-sm text-gray-500">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Calibration Progress</span>
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
                           {getCompletedCalibrationCount(printer)}/{getTotalCalibrationCount(printer)}
                         </span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                         <div
-                          className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                          className="bg-gray-50 dark:bg-gray-800 h-2 rounded-full transition-all duration-300"
                           style={{
                             width: `${getTotalCalibrationCount(printer) > 0 
                               ? (getCompletedCalibrationCount(printer) / getTotalCalibrationCount(printer)) * 100 
@@ -291,7 +294,7 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
                           e.stopPropagation()
                           handlePrinterSelect(printer.id)
                         }}
-                        className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center"
+                        className="text-gray-600 dark:text-gray-300 hover:text-blue-600 text-sm font-medium flex items-center"
                       >
                         <Settings className="h-4 w-4 mr-1" />
                         Configure
@@ -300,7 +303,7 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
                         {getCompletedCalibrationCount(printer) > 0 && (
                           <CheckCircle className="h-4 w-4 text-green-500" />
                         )}
-                        <span className="text-xs text-gray-500">
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
                           {getCompletedCalibrationCount(printer) > 0 ? 'Ready' : 'Setup Required'}
                         </span>
                       </div>

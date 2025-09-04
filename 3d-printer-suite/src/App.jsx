@@ -4,6 +4,7 @@ import storeRegistry from './stores/storeRegistry'
 import PrinterDashboard from './components/PrinterDashboard'
 import PrinterLayout from './components/PrinterLayout'
 import PrinterControlPage from './pages/PrinterControlPage'
+import { ThemeProvider } from './context/ThemeContext'
 
 // Simple router
 const useRouter = () => {
@@ -49,19 +50,27 @@ function App() {
   // Parse route
   const [_, page, id] = route.split('/')
 
-  switch (page) {
-    case 'printer':
-      if (id) {
-        return <PrinterLayout onBackToDashboard={handleBackToDashboard} />
-      }
-      break
+  const renderContent = () => {
+    switch (page) {
+      case 'printer':
+        if (id) {
+          return <PrinterLayout onBackToDashboard={handleBackToDashboard} />
+        }
+        break
 
-    case 'control':
-      return <PrinterControlPage />
+      case 'control':
+        return <PrinterControlPage />
 
-    default:
-      return <PrinterDashboard onPrinterSelect={handlePrinterSelect} />
+      default:
+        return <PrinterDashboard onPrinterSelect={handlePrinterSelect} />
+    }
   }
+
+  return (
+    <ThemeProvider>
+      {renderContent()}
+    </ThemeProvider>
+  )
 }
 
 export default App

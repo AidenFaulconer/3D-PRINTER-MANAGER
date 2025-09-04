@@ -133,7 +133,7 @@ const PrintQueueManager = () => {
     <div className="w-full space-y-4">
       {/* Active Print */}
       {activePrint && (
-        <div className="bg-white rounded-lg shadow p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
           <h3 className="text-lg font-semibold mb-2">Currently Printing</h3>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -189,7 +189,7 @@ const PrintQueueManager = () => {
       )}
 
       {/* Print Queue */}
-      <div className="bg-white rounded-lg shadow">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
         <div className="p-4 border-b">
           <h3 className="text-lg font-semibold">Print Queue</h3>
         </div>

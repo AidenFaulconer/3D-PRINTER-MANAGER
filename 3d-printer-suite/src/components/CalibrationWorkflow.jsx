@@ -207,7 +207,7 @@ const CalibrationWorkflow = () => {
     <div className="space-y-6">
       {/* Active Workflow */}
       {activeWorkflow && (
-        <div className="bg-white rounded-lg shadow p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
           <h2 className="text-lg font-semibold mb-4">Active Calibration</h2>
           <div className="space-y-4">
             {getWorkflow(activeWorkflow)?.steps.map((step, index) => (
@@ -240,7 +240,7 @@ const CalibrationWorkflow = () => {
       )}
 
       {/* Workflow List */}
-      <div className="bg-white rounded-lg shadow">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
         <div className="p-4 border-b flex justify-between items-center">
           <h2 className="text-lg font-semibold">Calibration Workflows</h2>
           <button
@@ -319,7 +319,7 @@ const CalibrationWorkflow = () => {
       {/* New Workflow Modal */}
       {showNewWorkflowModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full p-6">
             <h3 className="text-lg font-semibold mb-4">Create New Workflow</h3>
 
             <div className="space-y-4">

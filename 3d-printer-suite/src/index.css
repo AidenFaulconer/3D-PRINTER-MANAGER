@@ -1,3 +1,23 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Better selection colors for improved contrast */
+::selection {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.dark ::selection {
+  background-color: #60a5fa;
+  color: #0f172a;
+}
+
+/* Fix range input styling */
+input[type="range"] {
+  accent-color: #000064;
+}
+
+.dark input[type="range"] {
+  accent-color: #bac9f2;
+}

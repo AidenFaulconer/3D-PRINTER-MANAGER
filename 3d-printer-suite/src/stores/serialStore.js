@@ -610,6 +610,7 @@ const useSerialStore = create(
             current: parseFloat(tMatch[1]),
             target: parseFloat(tMatch[2])
           }
+          console.log('Temperature parsing: Matched hotend format 1:', tMatch)
         }
         
         // Format 2: T:25.0/0.0 (no spaces)
@@ -641,6 +642,7 @@ const useSerialStore = create(
             current: parseFloat(bMatch[1]),
             target: parseFloat(bMatch[2])
           }
+          console.log('Temperature parsing: Matched bed format 1:', bMatch)
         }
         
         // Format 2 for bed: B:25.0/0.0 (no spaces)
@@ -654,6 +656,7 @@ const useSerialStore = create(
           }
         }
         
+        console.log('Temperature parsing result for line:', line, '->', temps)
         return temps
       }
 
@@ -712,6 +715,8 @@ const useSerialStore = create(
                               timestamp: Date.now()
                             }
                           }), false, 'updateTemperatures')
+                        } else {
+                          console.log('SerialStore: Temperature line detected but no valid temps parsed:', line)
                         }
                       }
                       
@@ -1057,10 +1062,21 @@ const useSerialStore = create(
             tempMonitorRef = setInterval(async () => {
               const st = get()
               if (st.status !== 'connected' || !st.port?.writable) return
-              // Avoid spamming if writer is already locked by another command stream
-              if (writerLockPromise) return
+              
               try {
-                await sendCommand('M105')
+                // Send M105 directly without going through sendCommand to avoid writer lock issues
+                const writer = st.port.writable.getWriter()
+                const encoder = new TextEncoder()
+                const commandText = 'M105\r\n'
+                const data = encoder.encode(commandText)
+                
+                await writer.write(data)
+                writer.releaseLock()
+                
+                // Log the command
+                appendSerialLog('M105', 'tx')
+                console.log('Temperature monitoring: Sent M105 command')
+                
                 set((state) => ({
                   temperatures: {
                     ...state.temperatures,
@@ -1068,7 +1084,10 @@ const useSerialStore = create(
                   }
                 }), false, 'updateTempPollTime')
               } catch (e) {
-                appendSerialLog(`Temperature monitoring error: ${e.message}`, 'err')
+                // Don't log errors during program streaming as they're expected
+                if (!st.isStreamingProgram) {
+                  appendSerialLog(`Temperature monitoring error: ${e.message}`, 'err')
+                }
               }
             }, 2000)
 
@@ -1276,8 +1295,16 @@ const useSerialStore = create(
             () => {
               const recent = get().serialLogs.slice(-10)
               const hasOk = recent.some(l => (l.type === 'rx') && /^ok\b/i.test(String(l.message).trim()))
+              const hasBusy = recent.some(l => (l.type === 'rx') && /echo:busy: processing/i.test(String(l.message).trim()))
               const hasErr = recent.some(l => (l.type === 'rx') && /error|unknown|invalid/i.test(l.message))
-              if (hasOk && !resolved) {
+              
+              // Debug logging
+              if (Date.now() - start > 1000 && !resolved) { // Log after 1 second
+                console.log('Awaiting OK - Recent logs:', recent.map(l => `${l.type}: ${l.message}`).slice(-3))
+                console.log('hasOk:', hasOk, 'hasBusy:', hasBusy, 'hasErr:', hasErr)
+              }
+              
+              if ((hasOk || hasBusy) && !resolved) {
                 resolved = true
                 unsub()
                 resolve()
@@ -1299,7 +1326,12 @@ const useSerialStore = create(
           for (let i = 0; i < lines.length; i++) {
             await sendCommand(lines[i])
             if (delayMs) await new Promise(r => setTimeout(r, delayMs))
-            try { await awaitOk() } catch (_) {}
+            try { 
+              await awaitOk() 
+              console.log(`G-code line ${i + 1}/${lines.length} acknowledged: ${lines[i]}`)
+            } catch (e) {
+              console.warn(`G-code line ${i + 1}/${lines.length} timeout/error: ${lines[i]}`, e.message)
+            }
             sent = i + 1
             if (typeof onProgress === 'function') onProgress(sent, lines.length)
           }

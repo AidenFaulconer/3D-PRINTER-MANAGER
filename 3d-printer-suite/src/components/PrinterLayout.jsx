@@ -2,6 +2,8 @@ import { useState, useMemo, memo } from 'react'
 import useSerialConnection from '../hooks/useSerialConnection'
 import { ArrowLeft, Settings, Printer, CheckCircle, Circle, Home, Wrench, Thermometer, Ruler, Zap, FileText, AlertTriangle, TerminalSquare, SlidersHorizontal, MonitorPlay } from 'lucide-react'
 import usePrintersStore from '../stores/printersStore'
+import Logo from './Logo'
+import ThemeToggle from './ThemeToggle'
 import PrinterConfig from './PrinterConfig'
 import FirmwareConfig from './FirmwareConfig'
 import CalibrationStep from './CalibrationStep'
@@ -106,13 +108,13 @@ const PrinterLayout = memo(({ onBackToDashboard }) => {
 
   if (!printerBasicInfo) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-white dark:bg-gray-800 dark:bg-gray-900 flex items-center justify-center">
         <div className="text-center">
-          <Printer className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No Printer Selected</h3>
+          <Printer className="h-16 w-16 text-gray-300 dark:text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No Printer Selected</h3>
           <button
             onClick={onBackToDashboard}
-            className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors"
+            className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-white px-4 py-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
           >
             Back to Dashboard
           </button>
@@ -140,17 +142,34 @@ const PrinterLayout = memo(({ onBackToDashboard }) => {
   }
 
   const getStepIcon = (stepId) => {
-    const status = getStepStatus(stepId)
-    if (status === 'completed') return CheckCircle
-    if (status === 'in-progress') return Circle
-    return Circle
+    // Only calibration steps should show status icons
+    const isCalibrationStep = calibrationSteps.some(step => step.id === stepId)
+    
+    if (isCalibrationStep) {
+      const status = getStepStatus(stepId)
+      if (status === 'completed') return CheckCircle
+      if (status === 'in-progress') return Circle
+      return Circle
+    }
+    
+    // For non-calibration steps, return their original icon
+    const step = navigationSteps.find(s => s.id === stepId)
+    return step?.icon || Circle
   }
 
   const getStepIconColor = (stepId) => {
-    const status = getStepStatus(stepId)
-    if (status === 'completed') return 'text-green-500'
-    if (status === 'in-progress') return 'text-yellow-500'
-    return 'text-gray-400'
+    // Only calibration steps should show status colors
+    const isCalibrationStep = calibrationSteps.some(step => step.id === stepId)
+    
+    if (isCalibrationStep) {
+      const status = getStepStatus(stepId)
+      if (status === 'completed') return 'text-green-500'
+      if (status === 'in-progress') return 'text-yellow-500'
+      return 'text-gray-400 dark:text-gray-500'
+    }
+    
+    // For non-calibration steps, use better contrast colors
+    return 'text-gray-600 dark:text-gray-300'
   }
 
   const SelectedComponent = navigationSteps.find(step => step.id === selectedStep)?.component || PrinterConfig
@@ -169,22 +188,26 @@ const PrinterLayout = memo(({ onBackToDashboard }) => {
   }, {})
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-white dark:bg-gray-800 dark:bg-gray-900 flex">
       {/* Sidebar */}
-      <div className="w-64 bg-white shadow-lg border-r border-gray-200 flex flex-col">
+      <div className="w-64 bg-white dark:bg-gray-800 shadow-lg border-r border-gray-200 dark:border-gray-700 flex flex-col">
         {/* Header */}
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-3">
             <button
               onClick={onBackToDashboard}
-              className="text-gray-600 hover:text-gray-900 p-1 rounded-md hover:bg-gray-100 transition-colors"
+              className="text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <h2 className="text-lg font-semibold text-gray-900 truncate">{printerBasicInfo.name}</h2>
+            <div className="flex items-center space-x-2">
+              <Logo className="h-6 w-6" />
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white truncate">{printerBasicInfo.name}</h2>
+            </div>
+            <ThemeToggle />
           </div>
-          <p className="text-sm text-gray-600 truncate">{printerBasicInfo.model}</p>
-          <p className="text-xs text-gray-500 truncate">{printerBasicInfo.firmware}</p>
+          <p className="text-sm text-gray-600 dark:text-gray-300 truncate">{printerBasicInfo.model}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{printerBasicInfo.firmware}</p>
         </div>
 
         {/* Navigation */}
@@ -192,7 +215,7 @@ const PrinterLayout = memo(({ onBackToDashboard }) => {
           <div className="space-y-4">
             {Object.entries(groupedSteps).map(([category, steps]) => (
               <div key={category}>
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
                   {category}
                 </h3>
                 <div className="space-y-2">
@@ -207,14 +230,14 @@ const PrinterLayout = memo(({ onBackToDashboard }) => {
                         onClick={() => setSelectedStep(step.id)}
                         className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-colors ${
                           isSelected
-                            ? 'bg-blue-50 border border-blue-200 text-blue-700'
-                            : 'hover:bg-gray-50 text-gray-700 hover:text-gray-900'
+                            ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
+                            : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
                         }`}
                       >
                         <Icon className={`h-5 w-5 ${iconColor}`} />
                         <div className="flex-1 min-w-0">
                           <div className="font-medium text-sm truncate">{step.name}</div>
-                          <div className="text-xs text-gray-500 truncate">{step.description}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{step.description}</div>
                         </div>
                       </button>
                     )
@@ -226,13 +249,13 @@ const PrinterLayout = memo(({ onBackToDashboard }) => {
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t border-gray-200">
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700">
           <div className="text-center">
             <div className="flex items-center justify-center space-x-2 mb-2">
-              <Home className="h-4 w-4 text-gray-400" />
-              <span className="text-sm text-gray-600">3D Printer Suite</span>
+              <Home className="h-4 w-4 text-gray-500 dark:text-gray-400" />
+              <span className="text-sm text-gray-600 dark:text-gray-300">3D Printer Suite</span>
             </div>
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-gray-500 dark:text-gray-400">
               {printerBasicInfo.calibrationSteps && 
                 `${Object.values(printerBasicInfo.calibrationSteps).filter(step => step?.completed).length}/${Object.keys(printerBasicInfo.calibrationSteps).length} steps completed`
               }
@@ -243,12 +266,12 @@ const PrinterLayout = memo(({ onBackToDashboard }) => {
 
       {/* Main Content */}
       <div className="flex-1 overflow-auto">
-        <div className="bg-white shadow-sm border-b border-gray-200">
+        <div className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
           <div className="px-6 py-4">
-            <h1 className="text-xl font-semibold text-gray-900">
+            <h1 className="text-xl font-semibold text-gray-900 dark:text-white">
               {navigationSteps.find(step => step.id === selectedStep)?.name}
             </h1>
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-sm text-gray-600 dark:text-gray-300 mt-1">
               {navigationSteps.find(step => step.id === selectedStep)?.description}
             </p>
           </div>

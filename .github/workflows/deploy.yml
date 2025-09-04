@@ -29,14 +29,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: 3d-printer-suite/package-lock.json
+          cache: 'yarn'
+          cache-dependency-path: 3d-printer-suite/yarn.lock
 
       - name: Install dependencies
-        run: npm ci
+        run: yarn install --frozen-lockfile
 
       - name: Build
-        run: npm run build
+        run: yarn build
 
       - name: SPA fallback (copy index.html to 404.html)
         run: cp dist/index.html dist/404.html || true
