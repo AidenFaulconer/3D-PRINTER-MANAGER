@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, memo } from 'react'
 import useSerialConnection from '../hooks/useSerialConnection'
-import { ArrowLeft, Settings, Printer, CheckCircle, Circle, Home, Wrench, Thermometer, Ruler, Zap, FileText, AlertTriangle, TerminalSquare, SlidersHorizontal } from 'lucide-react'
+import { ArrowLeft, Settings, Printer, CheckCircle, Circle, Home, Wrench, Thermometer, Ruler, Zap, FileText, AlertTriangle, TerminalSquare, SlidersHorizontal, MonitorPlay } from 'lucide-react'
 import usePrintersStore from '../stores/printersStore'
 import PrinterConfig from './PrinterConfig'
 import FirmwareConfig from './FirmwareConfig'
@@ -10,14 +10,26 @@ import ProfileManagement from './ProfileManagement'
 import MaterialManagement from './MaterialManagement'
 import SerialPanel from './SerialPanel'
 import PrinterControlPanel from './PrinterControlPanel'
+import ConfigurationManagementTab from './ConfigurationManagementTab'
+import ConfigurationManager from './ConfigurationManager'
 import { calibrationSteps, getCalibrationStep } from '../data/calibrationSteps'
 
-const PrinterLayout = ({ onBackToDashboard }) => {
+const PrinterLayout = memo(({ onBackToDashboard }) => {
   const [selectedStep, setSelectedStep] = useState('config')
-  const { activePrinterId, getActivePrinter } = usePrintersStore()
+  const { activePrinterId } = usePrintersStore()
   const { status: serialStatus, sendCommand } = useSerialConnection()
   
-  const activePrinter = getActivePrinter()
+  // Only subscribe to the specific printer data we need for this component
+  const printerBasicInfo = usePrintersStore(state => {
+    const activePrinter = state.printers.find(p => p.id === state.activePrinterId)
+    if (!activePrinter) return null
+    return {
+      name: activePrinter.name,
+      model: activePrinter.model,
+      firmware: activePrinter.firmware,
+      calibrationSteps: activePrinter.calibrationSteps
+    }
+  })
   
   // Memoize serial props to prevent unnecessary re-renders
   const serialProps = useMemo(() => ({
@@ -27,6 +39,13 @@ const PrinterLayout = ({ onBackToDashboard }) => {
 
   // Create navigation steps including the new calibration steps
   const navigationSteps = [
+    {
+      id: 'monitor',
+      name: 'Print Monitor',
+      icon: MonitorPlay,
+      description: 'Monitor and control active prints',
+      component: () => window.location.href = '#/control'
+    },
     {
       id: 'config',
       name: 'Printer Configuration',
@@ -74,6 +93,22 @@ const PrinterLayout = ({ onBackToDashboard }) => {
       category: 'Diagnostics'
     },
     {
+      id: 'configuration',
+      name: 'Configuration',
+      icon: Settings,
+      description: 'Comprehensive printer settings management and editing',
+      component: ConfigurationManagementTab,
+      category: 'Configuration'
+    },
+    {
+      id: 'configManager',
+      name: 'Config Manager',
+      icon: Settings,
+      description: 'Advanced configuration management with snapshots and bulk operations',
+      component: ConfigurationManager,
+      category: 'Configuration'
+    },
+    {
       id: 'issueTracker',
       name: 'Issue Tracker',
       icon: AlertTriangle,
@@ -93,7 +128,7 @@ const PrinterLayout = ({ onBackToDashboard }) => {
     }))
   ]
 
-  if (!activePrinter) {
+  if (!printerBasicInfo) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -118,12 +153,12 @@ const PrinterLayout = ({ onBackToDashboard }) => {
   const getStepStatus = (stepId) => {
     if (stepId === 'config') return 'available'
     if (stepId === 'firmwareConfig') {
-      const step = activePrinter.calibrationSteps?.firmwareConfig
+      const step = printerBasicInfo.calibrationSteps?.firmwareConfig
       if (!step) return 'pending'
       return step.completed ? 'completed' : 'in-progress'
     }
     
-    const step = activePrinter.calibrationSteps?.[stepId]
+    const step = printerBasicInfo.calibrationSteps?.[stepId]
     if (!step) return 'pending'
     return step.completed ? 'completed' : 'in-progress'
   }
@@ -170,10 +205,10 @@ const PrinterLayout = ({ onBackToDashboard }) => {
             >
               <ArrowLeft className="h-5 w-5" />
             </button>
-            <h2 className="text-lg font-semibold text-gray-900 truncate">{activePrinter.name}</h2>
+            <h2 className="text-lg font-semibold text-gray-900 truncate">{printerBasicInfo.name}</h2>
           </div>
-          <p className="text-sm text-gray-600 truncate">{activePrinter.model}</p>
-          <p className="text-xs text-gray-500 truncate">{activePrinter.firmware}</p>
+          <p className="text-sm text-gray-600 truncate">{printerBasicInfo.model}</p>
+          <p className="text-xs text-gray-500 truncate">{printerBasicInfo.firmware}</p>
         </div>
 
         {/* Navigation */}
@@ -222,8 +257,8 @@ const PrinterLayout = ({ onBackToDashboard }) => {
               <span className="text-sm text-gray-600">3D Printer Suite</span>
             </div>
             <div className="text-xs text-gray-500">
-              {activePrinter.calibrationSteps && 
-                `${Object.values(activePrinter.calibrationSteps).filter(step => step?.completed).length}/${Object.keys(activePrinter.calibrationSteps).length} steps completed`
+              {printerBasicInfo.calibrationSteps && 
+                `${Object.values(printerBasicInfo.calibrationSteps).filter(step => step?.completed).length}/${Object.keys(printerBasicInfo.calibrationSteps).length} steps completed`
               }
             </div>
           </div>
@@ -249,6 +284,12 @@ const PrinterLayout = ({ onBackToDashboard }) => {
       </div>
     </div>
   )
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison to prevent unnecessary re-renders
+  return (
+    prevProps.onBackToDashboard === nextProps.onBackToDashboard &&
+    prevProps.selectedStep === nextProps.selectedStep
+  )
+})
 
 export default PrinterLayout

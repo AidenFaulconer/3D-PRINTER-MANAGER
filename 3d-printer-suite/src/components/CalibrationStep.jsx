@@ -17,16 +17,22 @@ import {
 } from 'lucide-react'
 import ConnectionButton from './controls/ConnectionButton'
 import usePrintersStore from '../stores/printersStore'
+import useSerialStore from '../stores/serialStore'
 
 import CalibrationReportModal from './CalibrationReportModal'
 import CalibrationMonitor from './CalibrationMonitor'
+import BedLevelVisualization from './BedLevelVisualization'
 
 const Tabs = ['Instructions', 'Visuals', 'Configuration', 'Results']
 
-// Separate Configuration tab component to prevent re-renders
-const ConfigurationTab = memo(({ 
+// Separate monitor component to prevent re-renders
+const MonitorSection = memo(() => {
+  return <CalibrationMonitor />
+})
+
+// Separate control section to prevent re-renders
+const ControlSection = memo(({ 
   step,
-  serialProps,
   canProceed,
   execState,
   generateGcode,
@@ -40,19 +46,14 @@ const ConfigurationTab = memo(({
   generatedGcode,
   copyGcode
 }) => {
-  // Memoize monitor to prevent re-renders from parent
-  const monitor = useMemo(() => <CalibrationMonitor />, [])
+  // Get only the serial state we need directly from the store
+  const serialStatus = useSerialStore(state => state.status)
 
-  // Memoize the control section to prevent re-renders from temperature updates
-  const controlSection = useMemo(() => (
+  return (
     <>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-gray-900">Configuration Parameters</h3>
-        <ConnectionButton 
-          onConnect={serialProps.connect}
-          onDisconnect={serialProps.disconnect}
-          className="w-auto"
-        />
+        <ConnectionButton className="w-auto" />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {(step.inputs || []).map(renderInput)}
@@ -67,8 +68,8 @@ const ConfigurationTab = memo(({
         </button>
         <button
           onClick={sendToPrinter}
-          disabled={serialProps.status !== 'connected' || !canProceed || execState.running}
-          className={`px-4 py-2 rounded-md transition-colors ${serialProps.status === 'connected' && canProceed && !execState.running ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
+          disabled={serialStatus !== 'connected' || !canProceed || execState.running}
+          className={`px-4 py-2 rounded-md transition-colors ${serialStatus === 'connected' && canProceed && !execState.running ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
         >
           Send to Printer
         </button>
@@ -105,48 +106,79 @@ const ConfigurationTab = memo(({
         </div>
       )}
     </>
-  ), [
-    step.inputs,
-    serialProps.status,
-    serialProps.connect,
-    serialProps.disconnect,
-    canProceed,
-    execState.running,
-    execState.progress,
-    execState.total,
-    execState.paused,
-    generateGcode,
-    sendToPrinter,
-    renderInput,
-    pauseExec,
-    resumeExec,
-    abortExec,
-    showGcode,
-    setShowGcode,
-    generatedGcode,
-    copyGcode
-  ])
-
-  return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6 space-y-4">
-      {monitor}
-      <div className="h-px bg-gray-200" />
-      {controlSection}
-    </div>
   )
 }, (prevProps, nextProps) => {
-  // Custom comparison to prevent unnecessary re-renders
   return (
-    prevProps.serialProps.status === nextProps.serialProps.status &&
     prevProps.canProceed === nextProps.canProceed &&
     prevProps.execState.running === nextProps.execState.running &&
-    prevProps.execState.progress === nextProps.execState.progress
-    // prevProps.showGcode === nextProps.showGcode &&
-    // prevProps.generatedGcode === nextProps.generatedGcode
+    prevProps.execState.progress === nextProps.execState.progress &&
+    prevProps.showGcode === nextProps.showGcode &&
+    prevProps.generatedGcode === nextProps.generatedGcode
   )
 })
 
-const CalibrationStep = memo(({ step = {}, onComplete, serialStatus, sendCommand, connect, disconnect }) => {
+// Configuration tab component
+const ConfigurationTab = memo(({ 
+  step,
+  canProceed,
+  execState,
+  generateGcode,
+  sendToPrinter,
+  renderInput,
+  pauseExec,
+  resumeExec,
+  abortExec,
+  showGcode,
+  setShowGcode,
+  generatedGcode,
+  copyGcode
+}) => {
+  return (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6 space-y-4">
+      <MonitorSection />
+      <div className="h-px bg-gray-200" />
+      {/* Add bed leveling visualization if this is a leveling-related step */}
+      {step.category === 'Movement' && step.id.includes('level') && (
+        <>
+          <div className="mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Bed Level Visualization</h3>
+            <BedLevelVisualization />
+          </div>
+          <div className="h-px bg-gray-200" />
+        </>
+      )}
+      <ControlSection 
+        step={step}
+        canProceed={canProceed}
+        execState={execState}
+        generateGcode={generateGcode}
+        sendToPrinter={sendToPrinter}
+        renderInput={renderInput}
+        pauseExec={pauseExec}
+        resumeExec={resumeExec}
+        abortExec={abortExec}
+        showGcode={showGcode}
+        setShowGcode={setShowGcode}
+        generatedGcode={generatedGcode}
+        copyGcode={copyGcode}
+      />
+    </div>
+  )
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.canProceed === nextProps.canProceed &&
+    prevProps.execState.running === nextProps.execState.running &&
+    prevProps.execState.progress === nextProps.execState.progress
+  )
+})
+
+const CalibrationStep = memo(({ step = {}, onComplete }) => {
+  // Get serial state from store with selective subscriptions
+  const serialStatus = useSerialStore(state => state.status)
+  const sendCommand = useSerialStore(state => state.sendCommand)
+  const connect = useSerialStore(state => state.connect)
+  const disconnect = useSerialStore(state => state.disconnect)
+
   // Prevent re-renders if serial props haven't changed
   const serialProps = useMemo(() => ({ 
     status: serialStatus, 
@@ -156,17 +188,23 @@ const CalibrationStep = memo(({ step = {}, onComplete, serialStatus, sendCommand
   }), [serialStatus, sendCommand, connect, disconnect])
   // Get active tab from store
   
-  const activePrinter = usePrintersStore(state => state.getActivePrinter())
+  // Only subscribe to the specific data we need to prevent unnecessary re-renders
+  const activePrinterId = usePrintersStore(state => state.activePrinterId)
+  const hasActivePrinter = usePrintersStore(state => !!state.printers.find(p => p.id === state.activePrinterId))
+  const calibrationStepData = usePrintersStore(state => {
+    const activePrinter = state.printers.find(p => p.id === state.activePrinterId)
+    return activePrinter?.calibrationSteps?.[step.id]
+  })
   const updateCalibrationStep = usePrintersStore(state => state.updateCalibrationStep)
-  const storedTab = activePrinter?.calibrationSteps?.[step.id]?.activeTab || 'Instructions'
+  const storedTab = calibrationStepData?.activeTab || 'Instructions'
   const [activeTab, _setActiveTab] = useState(storedTab)
   // Update store when tab changes
   const setActiveTab = useCallback((newTab) => {
     _setActiveTab(newTab)
-    if (activePrinter?.id && step?.id) {
-      updateCalibrationStep(activePrinter.id, step.id, { activeTab: newTab })
+    if (activePrinterId && step?.id) {
+      updateCalibrationStep(activePrinterId, step.id, { activeTab: newTab })
     }
-  }, [activePrinter?.id, step?.id, updateCalibrationStep])
+  }, [activePrinterId, step?.id, updateCalibrationStep])
   
   // Keep local state in sync with store
   useEffect(() => {
@@ -177,6 +215,10 @@ const CalibrationStep = memo(({ step = {}, onComplete, serialStatus, sendCommand
   
   // Use refs to track if state has been initialized
   const initializedRef = useRef(false)
+  const gcodeInitializedRef = useRef(false)
+  const resultsInitializedRef = useRef(false)
+  const inputValuesInitializedRef = useRef(false)
+  const inputValuesRef = useRef({})
   
   const [inputValues, setInputValues] = useState({})
   const [generatedGcode, setGeneratedGcode] = useState('')
@@ -201,19 +243,24 @@ const CalibrationStep = memo(({ step = {}, onComplete, serialStatus, sendCommand
     initializedRef.current = step.id;
 
     // Get existing data from store
-    const stepData = activePrinter?.calibrationSteps?.[step.id];
+    const stepData = calibrationStepData;
     
     // Initialize input values if not already set
-    if (!Object.keys(inputValues).length) {
+    if (!inputValuesInitializedRef.current) {
       if (stepData?.inputValues) {
+        console.log('Loading input values from store:', stepData.inputValues);
         setInputValues(stepData.inputValues);
+        inputValuesRef.current = stepData.inputValues;
       } else if (step.inputs) {
         const initialValues = {};
         step.inputs.forEach(input => {
           initialValues[input.key] = input.defaultValue;
         });
+        console.log('Initializing input values with defaults:', initialValues);
         setInputValues(initialValues);
+        inputValuesRef.current = initialValues;
       }
+      inputValuesInitializedRef.current = true;
     }
 
     // Initialize checklist if not already set
@@ -239,17 +286,31 @@ const CalibrationStep = memo(({ step = {}, onComplete, serialStatus, sendCommand
   }, [activeTab]);
 
   // Load results from store if exists
+  // Reset initialization refs when step changes
   useEffect(() => {
-    if (activePrinter?.calibrationSteps?.[step.id]) {
-      const stepData = activePrinter.calibrationSteps[step.id]
-      if (stepData.generatedGcode && !generatedGcode) {
+    gcodeInitializedRef.current = false
+    resultsInitializedRef.current = false
+    inputValuesInitializedRef.current = false
+  }, [step.id])
+
+  // Load saved data from store only once when component mounts or step changes
+  useEffect(() => {
+    if (calibrationStepData) {
+      const stepData = calibrationStepData
+      
+      // Only load G-code if we haven't initialized it yet and there's saved data
+      if (stepData.generatedGcode && !gcodeInitializedRef.current) {
         setGeneratedGcode(stepData.generatedGcode)
+        gcodeInitializedRef.current = true
       }
-      if (stepData.results && !Object.keys(results).length) {
+      
+      // Only load results if we haven't initialized them yet and there's saved data
+      if (stepData.results && !resultsInitializedRef.current) {
         setResults(stepData.results)
+        resultsInitializedRef.current = true
       }
     }
-  }, [activePrinter, step.id, generatedGcode, results])
+  }, [hasActivePrinter, step.id]) // Removed generatedGcode and results from dependencies
 
   if (!step) {
     return (
@@ -262,22 +323,70 @@ const CalibrationStep = memo(({ step = {}, onComplete, serialStatus, sendCommand
   }
 
   const handleInputChange = useCallback((key, value) => {
-    setInputValues(prev => ({
-      ...prev,
-      [key]: value
-    }))
+    setInputValues(prev => {
+      const newValues = {
+        ...prev,
+        [key]: value
+      }
+      inputValuesRef.current = newValues
+      return newValues
+    })
   }, [])
 
   const generateGcode = useCallback(() => {
-    if (typeof step.gcode === 'function') {
-      const gcode = step.gcode(inputValues)
-      setGeneratedGcode(gcode)
-      setShowGcode(true)
-    } else if (typeof step.gcode === 'string') {
-      setGeneratedGcode(step.gcode)
-      setShowGcode(true)
+    console.log('Generating G-code for step:', step?.id)
+    console.log('Step gcode function:', step?.gcode)
+    console.log('Input values:', inputValuesRef.current)
+    
+    if (!step?.gcode) {
+      console.error('No gcode generator found for step:', step?.id)
+      return
     }
-  }, [step?.gcode, inputValues])
+
+    try {
+      let gcode
+      if (typeof step.gcode === 'function') {
+        // Validate required inputs
+        const missingInputs = step.inputs?.filter(input => 
+          input.required && (inputValuesRef.current[input.key] === undefined || inputValuesRef.current[input.key] === '')
+        )
+        
+        if (missingInputs?.length > 0) {
+          console.error('Missing required inputs:', missingInputs.map(i => i.key))
+          alert(`Missing required inputs: ${missingInputs.map(i => i.label || i.key).join(', ')}`)
+          return
+        }
+
+        console.log('Calling gcode function with inputs:', inputValuesRef.current)
+        gcode = step.gcode(inputValuesRef.current)
+        console.log('Generated gcode:', gcode)
+      } else if (typeof step.gcode === 'string') {
+        gcode = step.gcode
+        console.log('Using static gcode:', gcode)
+      }
+
+      if (gcode) {
+        console.log('Setting generated gcode and showing preview')
+        setGeneratedGcode(gcode)
+        setShowGcode(true)
+        gcodeInitializedRef.current = true // Mark as initialized to prevent overwriting
+        
+        // Save to store
+        if (activePrinterId && step?.id) {
+          updateCalibrationStep(activePrinterId, step.id, { 
+            generatedGcode: gcode,
+            inputValues: inputValuesRef.current
+          })
+        }
+      } else {
+        console.error('No gcode generated')
+        alert('Failed to generate G-code. Please check the console for details.')
+      }
+    } catch (error) {
+      console.error('Error generating gcode:', error)
+      alert(`Error generating G-code: ${error.message}`)
+    }
+  }, [step?.gcode, step?.id, step?.inputs, activePrinterId, updateCalibrationStep])
 
   const sendToPrinter = useCallback(async () => {
     if (serialProps.status !== 'connected') {
@@ -362,19 +471,19 @@ const CalibrationStep = memo(({ step = {}, onComplete, serialStatus, sendCommand
   const canProceed = Object.values(checklist).every(Boolean) || (step.checklist || []).length === 0
 
   const saveConfiguration = () => {
-    if (!activePrinter) return
+    if (!hasActivePrinter) return
 
     const stepData = {
       completed: true,
       lastUpdated: new Date().toISOString(),
-      inputValues: { ...inputValues },
+      inputValues: { ...inputValuesRef.current },
       generatedGcode: generatedGcode,
       category: step.category,
       checklist: { ...checklist },
       results: { ...results }
     }
 
-    updateCalibrationStep(activePrinter.id, step.id, stepData)
+    updateCalibrationStep(activePrinterId, step.id, stepData)
     setIsCompleted(true)
     if (onComplete) onComplete(step.id)
   }
@@ -419,7 +528,8 @@ const CalibrationStep = memo(({ step = {}, onComplete, serialStatus, sendCommand
 
   const renderInput = useCallback((input) => {
     const { type, label, key, defaultValue, min, max, step: stepValue, required } = input
-    const value = inputValues[key] ?? defaultValue
+    // Access current inputValues via ref to avoid dependency issues
+    const value = inputValuesRef.current[key] ?? defaultValue
 
     switch (type) {
       case 'checkbox':
@@ -477,7 +587,7 @@ const CalibrationStep = memo(({ step = {}, onComplete, serialStatus, sendCommand
       default:
         return null
     }
-  }, [inputValues, handleInputChange])
+  }, [handleInputChange])
 
   const handlePhotoUpload = (e) => {
     const files = Array.from(e.target.files || [])
@@ -626,7 +736,6 @@ const CalibrationStep = memo(({ step = {}, onComplete, serialStatus, sendCommand
       {activeTab === 'Configuration' && (
         <ConfigurationTab
           step={step}
-          serialProps={serialProps}
           canProceed={canProceed}
           execState={execState}
           generateGcode={generateGcode}
@@ -665,8 +774,8 @@ const CalibrationStep = memo(({ step = {}, onComplete, serialStatus, sendCommand
               <div className="mt-3 text-sm text-gray-700">
                 <span className="font-medium">Helper:</span>{' '}
                 {(() => {
-                  const current = Number(inputValues.currentEsteps || 0)
-                  const requested = Number(inputValues.extrudeDistance || 0)
+                  const current = Number(inputValuesRef.current.currentEsteps || 0)
+                  const requested = Number(inputValuesRef.current.extrudeDistance || 0)
                   const actual = Number(results.measurements.primary || 0)
                   if (current > 0 && requested > 0 && actual > 0) {
                     const newEsteps = (current * requested) / actual
@@ -742,12 +851,21 @@ const CalibrationStep = memo(({ step = {}, onComplete, serialStatus, sendCommand
           isOpen={showReport}
           onClose={()=>setShowReport(false)}
           step={step}
-          stepData={{ inputValues, results, generatedGcode, lastUpdated: new Date().toISOString() }}
-          printer={activePrinter}
+          stepData={{ inputValues: inputValuesRef.current, results, generatedGcode, lastUpdated: new Date().toISOString() }}
+          printer={hasActivePrinter ? { id: activePrinterId } : null}
         />
       )}
     </div>
   )
-})
+}, (prevProps, nextProps) => {
+  // Custom comparison to prevent unnecessary re-renders
+  return (
+    prevProps.serialProps.status === nextProps.serialProps.status &&
+    prevProps.canProceed === nextProps.canProceed &&
+    // prevProps.execState.running === nextProps.execState.running && 
+    prevProps.activeTab === nextProps.activeTab && 
+    prevProps.isCompleted === nextProps.isCompleted
+  )
+});
 
 export default CalibrationStep

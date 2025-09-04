@@ -1,27 +1,32 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { HelpCircle } from 'lucide-react'
 import GcodeHelperPanel from './GcodeHelperPanel'
-import { useSerial } from '../context/SerialConnectionContext'
+import useSerialStore from '../stores/serialStore'
 
 const Line = ({ entry }) => {
-  const color = entry.direction === 'tx' ? 'text-blue-700' : entry.direction === 'rx' ? 'text-green-700' : entry.direction === 'err' ? 'text-red-700' : 'text-gray-600'
-  const badge = entry.direction.toUpperCase()
+  const color = entry.type === 'tx' ? 'text-blue-400' : entry.type === 'rx' ? 'text-green-400' : entry.type === 'err' ? 'text-red-400' : 'text-gray-300'
+  const badge = entry.type.toUpperCase()
+  const badgeColor = entry.type === 'tx' ? 'bg-blue-600' : entry.type === 'rx' ? 'bg-green-600' : entry.type === 'err' ? 'bg-red-600' : 'bg-gray-600'
   return (
     <div className="text-xs leading-5">
-      <span className="text-gray-400 mr-2">{new Date(entry.timestamp).toLocaleTimeString()}</span>
-      <span className={`px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 mr-2`}>{badge}</span>
+      <span className="text-gray-500 mr-2">{entry.timestamp}</span>
+      <span className={`px-1.5 py-0.5 rounded text-white text-xs font-bold mr-2 ${badgeColor}`}>{badge}</span>
       <span className={color}>{entry.message}</span>
     </div>
   )
 }
 
-const SerialTerminal = ({ log, onSend, onSendMany, onClear }) => {
+const SerialTerminal = React.memo(({ onSend, onSendMany, onClear }) => {
+  // Subscribe to logs directly to minimize re-renders
+  const log = useSerialStore(state => state.serialLogs)
+  const fetchAllPrinterSettings = useSerialStore(state => state.fetchAllPrinterSettings)
+  const serialStatus = useSerialStore(state => state.status)
   const [input, setInput] = useState('')
   const [history, setHistory] = useState([])
   const [historyIndex, setHistoryIndex] = useState(-1)
   const scrollRef = useRef(null)
   const [showHelper, setShowHelper] = useState(false)
-  const serial = useSerial()
+  const sendCommand = useSerialStore(state => state.sendCommand)
 
   const handleSend = () => {
     const line = input.trim()
@@ -58,7 +63,7 @@ const SerialTerminal = ({ log, onSend, onSendMany, onClear }) => {
   }, [log])
 
   const exportLog = () => {
-    const text = log.map(l => `${l.timestamp}\t${l.direction}\t${l.message}`).join('\n')
+    const text = log.map(l => `${l.timestamp}\t${l.type}\t${l.message}`).join('\n')
     const blob = new Blob([text], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -90,19 +95,19 @@ const SerialTerminal = ({ log, onSend, onSendMany, onClear }) => {
   }, [input])
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+    <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3 h-full flex flex-col">
       <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-600">Terminal</div>
+        <div className="text-lg font-semibold text-gray-900">Serial Terminal</div>
         <div className="space-x-2">
-          <button onClick={()=>setShowHelper(true)} className="px-2 py-1 text-sm bg-gray-100 rounded inline-flex items-center"><HelpCircle className="h-4 w-4 mr-1"/> Help</button>
-          <button onClick={onClear} className="px-2 py-1 text-sm bg-gray-100 rounded">Clear</button>
-          <button onClick={exportLog} className="px-2 py-1 text-sm bg-gray-100 rounded">Export</button>
+          <button onClick={()=>setShowHelper(true)} className="px-3 py-1 text-sm bg-gray-100 rounded inline-flex items-center hover:bg-gray-200"><HelpCircle className="h-4 w-4 mr-1"/> Help</button>
+          <button onClick={onClear} className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200">Clear</button>
+          <button onClick={exportLog} className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200">Export</button>
         </div>
       </div>
 
-      <div ref={scrollRef} className="h-64 overflow-auto bg-gray-50 border border-gray-200 rounded p-2">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto bg-gray-900 border border-gray-300 rounded p-3 font-mono text-sm">
         {log.length === 0 ? (
-          <div className="text-xs text-gray-400">No messages yet</div>
+          <div className="text-sm text-gray-500 text-center py-8">No messages yet. Connect to your printer to see serial communication.</div>
         ) : (
           <div className="space-y-1">
             {log.map((entry, idx) => (
@@ -121,7 +126,7 @@ const SerialTerminal = ({ log, onSend, onSendMany, onClear }) => {
           className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
         />
         <button onClick={handleSend} className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Send</button>
-        <button onClick={()=>serial.sendCommand('M112')} className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700" title="Emergency Stop">E-Stop</button>
+        <button onClick={()=>sendCommand('M112')} className="px-3 py-2 bg-red-600 text-white rounded hover:bg-red-700" title="Emergency Stop">E-Stop</button>
       </div>
 
       <div className="text-xs text-gray-500 flex items-center justify-between">
@@ -134,6 +139,13 @@ const SerialTerminal = ({ log, onSend, onSendMany, onClear }) => {
       )}
     </div>
   )
-}
+}, (prevProps, nextProps) => {
+  // Only re-render if the function references change
+  return (
+    prevProps.onSend === nextProps.onSend &&
+    prevProps.onSendMany === nextProps.onSendMany &&
+    prevProps.onClear === nextProps.onClear
+  )
+})
 
 export default SerialTerminal

@@ -1,20 +1,20 @@
 import React from 'react'
 import { Usb, Cable } from 'lucide-react'
-import usePrintersStore from '../../stores/printersStore'
+import useSerialStore from '../../stores/serialStore'
 
-const ConnectionButton = React.memo(function ConnectionButton({ onConnect, onDisconnect, className = '' }) {
-  const { serialStatus } = usePrintersStore(state => ({
-    serialStatus: state.serialStatus
-  }))
+const ConnectionButton = React.memo(function ConnectionButton({ className = '' }) {
+  const status = useSerialStore(state => state.status)
+  const connect = useSerialStore(state => state.connect)
+  const disconnect = useSerialStore(state => state.disconnect)
 
-  const isConnected = serialStatus === 'connected'
-  const isConnecting = serialStatus === 'connecting'
+  const isConnected = status === 'connected'
+  const isConnecting = status === 'connecting'
 
   const handleClick = () => {
     if (isConnected) {
-      onDisconnect?.()
+      disconnect()
     } else if (!isConnecting) {
-      onConnect?.()
+      connect()
     }
   }
 

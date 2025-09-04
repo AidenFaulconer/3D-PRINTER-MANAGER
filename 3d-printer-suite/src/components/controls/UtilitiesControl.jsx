@@ -1,4 +1,5 @@
 import React from 'react'
+import FirmwareInfoDisplay from './FirmwareInfoDisplay'
 
 export default function UtilitiesControl({ send }) {
   const pidTune = () => {
@@ -11,10 +12,6 @@ export default function UtilitiesControl({ send }) {
     send('G29')
   }
 
-  const firmwareInfo = () => {
-    send('M115')
-  }
-
   const emergencyStop = () => {
     send('M112')
   }
@@ -25,7 +22,7 @@ export default function UtilitiesControl({ send }) {
       <div className="flex flex-wrap gap-2">
         <button className="px-3 py-2 bg-indigo-600 text-white rounded" onClick={pidTune}>PID Tune (E0)</button>
         <button className="px-3 py-2 bg-blue-600 text-white rounded" onClick={bedLeveling}>Bed Leveling</button>
-        <button className="px-3 py-2 bg-gray-100 rounded" onClick={firmwareInfo}>Firmware Info</button>
+        <FirmwareInfoDisplay />
         <button className="px-3 py-2 bg-red-600 text-white rounded" onClick={emergencyStop}>Emergency Stop</button>
       </div>
     </div>

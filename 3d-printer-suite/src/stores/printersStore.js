@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
+import { persist, devtools } from 'zustand/middleware'
 
 // Types for better code organization (these would be TypeScript interfaces in a TS project)
 // Printer object structure
@@ -14,25 +14,12 @@ import { persist } from 'zustand/middleware'
 // }
 
 const usePrintersStore = create(
-  persist(
-    (set, get) => ({
+  devtools(
+    persist(
+      (set, get) => ({
       // State
       printers: [],
       activePrinterId: null,
-      
-      // Serial connection state
-      serialPort: null,
-      serialStatus: 'disconnected', // 'disconnected' | 'connecting' | 'connected'
-      serialBaudRate: 115200,
-      serialAutoDetect: true,
-      serialError: null,
-      serialLog: [], // { timestamp, message, direction: 'tx' | 'rx' | 'sys' | 'err' }
-      temperatures: {
-        hotend: { current: 0, target: 0 },
-        bed: { current: 0, target: 0 },
-        timestamp: Date.now()
-      },
-      temperatureHistory: [], // Array of temperature readings
 
       // Actions
       addPrinter: (printerData) => {
@@ -44,6 +31,71 @@ const usePrintersStore = create(
           bedSize: printerData.bedSize || { x: 220, y: 220, z: 250 },
           calibrationSteps: printerData.calibrationSteps || {},
           firmwareConfiguration: printerData.firmwareConfiguration || {},
+          printerSettings: printerData.printerSettings || {
+            units: {
+              linear: 'mm',
+              temperature: 'C'
+            },
+            filament: {
+              diameter: 1.75,
+              type: 'PLA'
+            },
+            stepsPerUnit: {
+              x: 80,
+              y: 80,
+              z: 400,
+              e: 93
+            },
+            feedrates: {
+              x: 500,
+              y: 500,
+              z: 5,
+              e: 25
+            },
+            acceleration: {
+              max: 1000,
+              print: 1000,
+              retract: 1000,
+              travel: 1000,
+              jerk: {
+                x: 0,
+                y: 0,
+                z: 0,
+                e: 0
+              }
+            },
+            homeOffset: {
+              x: 0,
+              y: 0,
+              z: 0
+            },
+            bedLeveling: {
+              enabled: false,
+              mesh: [],
+              fadeHeight: 10
+            },
+            materialHeating: {
+              pla: { hotend: 200, bed: 60 },
+              abs: { hotend: 240, bed: 100 },
+              petg: { hotend: 230, bed: 80 }
+            },
+            pid: {
+              hotend: { p: 21.73, i: 1.54, d: 73.76 },
+              bed: { p: 301.25, i: 24.20, d: 73.76 }
+            },
+            powerLossRecovery: true,
+            zProbeOffset: {
+              x: 0,
+              y: 0,
+              z: 0
+            },
+            linearAdvance: 0,
+            filamentLoadUnload: {
+              loadLength: 0,
+              unloadLength: 0
+            },
+            lastUpdated: null
+          },
           slicerProfiles: printerData.slicerProfiles || {
             curaPath: '',
             profiles: [],
@@ -59,6 +111,7 @@ const usePrintersStore = create(
           activePrinterId: newPrinter.id
         }))
       },
+
       // Macro management
       addMacro: (printerId, macro) => {
         const newMacro = {
@@ -104,11 +157,27 @@ const usePrintersStore = create(
         }))
       },
 
-
       updatePrinter: (id, updates) => {
         set((state) => ({
           printers: state.printers.map((printer) =>
             printer.id === id ? { ...printer, ...updates } : printer
+          )
+        }))
+      },
+
+      updatePrinterSettings: (printerId, settings) => {
+        set((state) => ({
+          printers: state.printers.map((printer) =>
+            printer.id === printerId 
+              ? { 
+                  ...printer, 
+                  printerSettings: {
+                    ...printer.printerSettings,
+                    ...settings,
+                    lastUpdated: new Date().toISOString()
+                  }
+                }
+              : printer
           )
         }))
       },
@@ -297,17 +366,24 @@ const usePrintersStore = create(
         }
 
         set((state) => ({
-          printers: state.printers.map((printer) =>
-            printer.id === printerId
-              ? {
-                  ...printer,
-                  slicerProfiles: {
-                    ...printer.slicerProfiles,
-                    profiles: [...printer.slicerProfiles.profiles, newProfile]
-                  }
-                }
-              : printer
-          )
+          printers: state.printers.map((printer) => {
+            if (printer.id !== printerId) return printer;
+            
+            // Ensure slicerProfiles exists with default values
+            const currentSlicerProfiles = printer.slicerProfiles || {
+              curaPath: '',
+              profiles: [],
+              materials: []
+            };
+            
+            return {
+              ...printer,
+              slicerProfiles: {
+                ...currentSlicerProfiles,
+                profiles: [...(currentSlicerProfiles.profiles || []), newProfile]
+              }
+            };
+          })
         }))
       },
 
@@ -573,64 +649,223 @@ const usePrintersStore = create(
         return state.printers.find((printer) => printer.id === id)
       },
 
-      // Serial communication actions
-      setSerialPort: (port) => set({ serialPort: port }),
-      setSerialStatus: (status) => set({ serialStatus: status }),
-      setSerialBaudRate: (baudRate) => set({ serialBaudRate: baudRate }),
-      setSerialAutoDetect: (autoDetect) => set({ serialAutoDetect: autoDetect }),
-      setSerialError: (error) => set({ serialError: error }),
-      
-      setTemperatures: (temps) => {
-        const timestamp = Date.now()
+      // Configuration backup/restore functions
+      createConfigurationSnapshot: (printerId, name, description = '') => {
+        const state = get()
+        const printer = state.printers.find(p => p.id === printerId)
+        
+        if (!printer) {
+          throw new Error('Printer not found')
+        }
+        
+        const snapshot = {
+          id: crypto.randomUUID(),
+          name,
+          description,
+          timestamp: new Date().toISOString(),
+          printerId,
+          printerName: printer.name,
+          configuration: {
+            printerSettings: printer.printerSettings,
+            firmwareConfiguration: printer.firmwareConfiguration,
+            bedSize: printer.bedSize,
+            model: printer.model,
+            firmware: printer.firmware
+          }
+        }
+        
         set((state) => ({
-          temperatures: { ...temps, timestamp },
-          temperatureHistory: [...state.temperatureHistory, {
-            t: timestamp,
-            hotend: temps.hotend.current,
-            bed: temps.bed.current,
-            targetHotend: temps.hotend.target,
-            targetBed: temps.bed.target
-          }].slice(-120) // Keep last 120 readings
+          printers: state.printers.map(p =>
+            p.id === printerId
+              ? {
+                  ...p,
+                  configurationSnapshots: [...(p.configurationSnapshots || []), snapshot]
+                }
+              : p
+          )
+        }))
+        
+        return snapshot
+      },
+
+      restoreConfigurationSnapshot: (printerId, snapshotId) => {
+        const state = get()
+        const printer = state.printers.find(p => p.id === printerId)
+        
+        if (!printer) {
+          throw new Error('Printer not found')
+        }
+        
+        const snapshot = printer.configurationSnapshots?.find(s => s.id === snapshotId)
+        
+        if (!snapshot) {
+          throw new Error('Snapshot not found')
+        }
+        
+        set((state) => ({
+          printers: state.printers.map(p =>
+            p.id === printerId
+              ? {
+                  ...p,
+                  printerSettings: { ...snapshot.configuration.printerSettings },
+                  firmwareConfiguration: { ...snapshot.configuration.firmwareConfiguration },
+                  bedSize: { ...snapshot.configuration.bedSize },
+                  model: snapshot.configuration.model,
+                  firmware: snapshot.configuration.firmware
+                }
+              : p
+          )
+        }))
+        
+        return snapshot
+      },
+
+      deleteConfigurationSnapshot: (printerId, snapshotId) => {
+        set((state) => ({
+          printers: state.printers.map(p =>
+            p.id === printerId
+              ? {
+                  ...p,
+                  configurationSnapshots: (p.configurationSnapshots || []).filter(s => s.id !== snapshotId)
+                }
+              : p
+          )
         }))
       },
-      
-      appendSerialLog: (message, direction = 'sys') => 
+
+      exportConfiguration: (printerId) => {
+        const state = get()
+        const printer = state.printers.find(p => p.id === printerId)
+        
+        if (!printer) {
+          throw new Error('Printer not found')
+        }
+        
+        const exportData = {
+          version: '1.0',
+          timestamp: new Date().toISOString(),
+          printer: {
+            name: printer.name,
+            model: printer.model,
+            firmware: printer.firmware,
+            bedSize: printer.bedSize,
+            printerSettings: printer.printerSettings,
+            firmwareConfiguration: printer.firmwareConfiguration
+          },
+          snapshots: printer.configurationSnapshots || []
+        }
+        
+        return exportData
+      },
+
+      importConfiguration: (printerId, importData) => {
+        if (!importData.version || !importData.printer) {
+          throw new Error('Invalid configuration file format')
+        }
+        
         set((state) => ({
-          serialLog: [
-            ...state.serialLog,
-            { 
-              timestamp: new Date().toISOString(), 
-              message, 
-              direction 
+          printers: state.printers.map(p =>
+            p.id === printerId
+              ? {
+                  ...p,
+                  name: importData.printer.name || p.name,
+                  model: importData.printer.model || p.model,
+                  firmware: importData.printer.firmware || p.firmware,
+                  bedSize: importData.printer.bedSize || p.bedSize,
+                  printerSettings: importData.printer.printerSettings || p.printerSettings,
+                  firmwareConfiguration: importData.printer.firmwareConfiguration || p.firmwareConfiguration,
+                  configurationSnapshots: importData.snapshots || []
+                }
+              : p
+          )
+        }))
+      },
+
+      compareConfigurations: (printerId, snapshotId1, snapshotId2) => {
+        const state = get()
+        const printer = state.printers.find(p => p.id === printerId)
+        
+        if (!printer) {
+          throw new Error('Printer not found')
+        }
+        
+        const snapshots = printer.configurationSnapshots || []
+        const snapshot1 = snapshots.find(s => s.id === snapshotId1)
+        const snapshot2 = snapshots.find(s => s.id === snapshotId2)
+        
+        if (!snapshot1 || !snapshot2) {
+          throw new Error('One or both snapshots not found')
+        }
+        
+        const differences = []
+        
+        // Compare printer settings
+        const compareSettings = (settings1, settings2, path = '') => {
+          for (const key in settings1) {
+            const currentPath = path ? `${path}.${key}` : key
+            
+            if (typeof settings1[key] === 'object' && settings1[key] !== null) {
+              if (typeof settings2[key] === 'object' && settings2[key] !== null) {
+                compareSettings(settings1[key], settings2[key], currentPath)
+              } else {
+                differences.push({
+                  path: currentPath,
+                  type: 'modified',
+                  oldValue: settings1[key],
+                  newValue: settings2[key]
+                })
+              }
+            } else if (settings1[key] !== settings2[key]) {
+              differences.push({
+                path: currentPath,
+                type: 'modified',
+                oldValue: settings1[key],
+                newValue: settings2[key]
+              })
             }
-          ].slice(-1000) // Keep last 1000 messages
-        })),
-      
-      clearSerialLog: () => set({ serialLog: [] }),
+          }
+          
+          // Check for new keys in settings2
+          for (const key in settings2) {
+            if (!(key in settings1)) {
+              differences.push({
+                path: path ? `${path}.${key}` : key,
+                type: 'added',
+                oldValue: undefined,
+                newValue: settings2[key]
+              })
+            }
+          }
+        }
+        
+        compareSettings(snapshot1.configuration.printerSettings, snapshot2.configuration.printerSettings)
+        
+        return {
+          snapshot1: { name: snapshot1.name, timestamp: snapshot1.timestamp },
+          snapshot2: { name: snapshot2.name, timestamp: snapshot2.timestamp },
+          differences
+        }
+      },
 
       // Utility actions
       resetStore: () => {
         set({ 
           printers: [], 
-          activePrinterId: null,
-          serialPort: null,
-          serialStatus: 'disconnected',
-          serialBaudRate: 115200,
-          serialAutoDetect: true,
-          serialError: null,
-          serialLog: []
+          activePrinterId: null
         })
       }
-    }),
+      }),
+      {
+        name: '3d-printer-suite-storage', // unique name for localStorage key
+        partialize: (state) => ({
+          printers: state.printers,
+          activePrinterId: state.activePrinterId
+        })
+      }
+    ),
     {
-      name: '3d-printer-suite-storage', // unique name for localStorage key
-      partialize: (state) => ({
-        printers: state.printers,
-        activePrinterId: state.activePrinterId,
-        // Don't persist serial port object, but persist other serial settings
-        serialBaudRate: state.serialBaudRate,
-        serialAutoDetect: state.serialAutoDetect
-      })
+      name: 'PrintersStore',
+      enabled: process.env.NODE_ENV === 'development'
     }
   )
 )

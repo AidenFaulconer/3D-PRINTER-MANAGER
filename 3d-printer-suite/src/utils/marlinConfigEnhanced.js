@@ -2,6 +2,108 @@
  * Enhanced Marlin Configuration utilities with categorization, validation, and presets
  */
 
+/**
+ * Parse Marlin configuration from M503 response
+ * @param {string} response - M503 command response
+ * @returns {Object} Parsed configuration
+ */
+export function parseMarlinConfig(response) {
+  const config = {
+    steps: {},
+    acceleration: {},
+    maxTemperatures: {},
+    feedrate: {},
+    endstops: {},
+    probeOffset: null,
+    bedLeveling: {},
+    pidSettings: {}
+  }
+
+  const lines = response.split('\n')
+  
+  for (const line of lines) {
+    const trimmed = line.trim()
+    
+    // Skip empty lines and comments
+    if (!trimmed || trimmed.startsWith(';')) continue
+    
+    // Match M92 - Steps per unit
+    if (trimmed.startsWith('M92 ')) {
+      const matches = trimmed.match(/([XYZE])(\d+\.?\d*)/)
+      if (matches) {
+        config.steps[matches[1].toLowerCase()] = parseFloat(matches[2])
+      }
+    }
+    
+    // Match M201 - Max acceleration
+    else if (trimmed.startsWith('M201 ')) {
+      const matches = trimmed.match(/([XYZE])(\d+\.?\d*)/)
+      if (matches) {
+        config.acceleration[matches[1].toLowerCase()] = parseFloat(matches[2])
+      }
+    }
+    
+    // Match M203 - Max feedrate
+    else if (trimmed.startsWith('M203 ')) {
+      const matches = trimmed.match(/([XYZE])(\d+\.?\d*)/)
+      if (matches) {
+        config.feedrate[matches[1].toLowerCase()] = parseFloat(matches[2])
+      }
+    }
+    
+    // Match M301 - Hotend PID
+    else if (trimmed.startsWith('M301 ')) {
+      const matches = {
+        p: trimmed.match(/P(\d+\.?\d*)/),
+        i: trimmed.match(/I(\d+\.?\d*)/),
+        d: trimmed.match(/D(\d+\.?\d*)/)
+      }
+      if (matches.p && matches.i && matches.d) {
+        config.pidSettings.hotend = {
+          p: parseFloat(matches.p[1]),
+          i: parseFloat(matches.i[1]),
+          d: parseFloat(matches.d[1])
+        }
+      }
+    }
+    
+    // Match M304 - Bed PID
+    else if (trimmed.startsWith('M304 ')) {
+      const matches = {
+        p: trimmed.match(/P(\d+\.?\d*)/),
+        i: trimmed.match(/I(\d+\.?\d*)/),
+        d: trimmed.match(/D(\d+\.?\d*)/)
+      }
+      if (matches.p && matches.i && matches.d) {
+        config.pidSettings.bed = {
+          p: parseFloat(matches.p[1]),
+          i: parseFloat(matches.i[1]),
+          d: parseFloat(matches.d[1])
+        }
+      }
+    }
+    
+    // Match M851 - Z-probe offset
+    else if (trimmed.startsWith('M851 ')) {
+      const match = trimmed.match(/Z(-?\d+\.?\d*)/)
+      if (match) {
+        config.probeOffset = parseFloat(match[1])
+      }
+    }
+    
+    // Match M420 - Bed Leveling State
+    else if (trimmed.startsWith('M420 ')) {
+      config.bedLeveling.enabled = trimmed.includes('S1')
+      const matchZ = trimmed.match(/Z(\d+\.?\d*)/)
+      if (matchZ) {
+        config.bedLeveling.fadeHeight = parseFloat(matchZ[1])
+      }
+    }
+  }
+  
+  return config
+}
+
 // Detailed category mapping with subcategories
 export const MARLIN_CATEGORIES = {
   'Machine Configuration': {
