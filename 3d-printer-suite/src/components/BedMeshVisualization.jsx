@@ -180,14 +180,16 @@ const BedMesh2D = ({ meshData, colorScheme, showValues, showGrid }) => {
 const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
   const meshRef = useRef()
 
-  const { geometry, points } = useMemo(() => {
+  const { geometry, points, zMin, zMax } = useMemo(() => {
     if (!meshData || !meshData.mesh || meshData.mesh.length === 0) {
-      return { geometry: null, points: [] }
+      return { geometry: null, points: [], zMin: 0, zMax: 0 }
     }
 
     const meshPoints = meshData.mesh
     const maxI = Math.max(...meshPoints.map(p => p.i))
     const maxJ = Math.max(...meshPoints.map(p => p.j))
+    const zMin = Math.min(...meshPoints.map(p => p.z))
+    const zMax = Math.max(...meshPoints.map(p => p.z))
     
     // Create a 2D array to store mesh data
     const meshArray = Array(maxI + 1).fill().map(() => Array(maxJ + 1).fill(0))
@@ -200,6 +202,7 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
     // Create geometry for the mesh surface
     const geometry = new THREE.PlaneGeometry(maxJ, maxI, maxJ, maxI)
     const positions = geometry.attributes.position.array
+    const colors = new Float32Array((maxI + 1) * (maxJ + 1) * 3)
     
     // Set Z positions based on mesh data
     for (let i = 0; i <= maxI; i++) {
@@ -207,14 +210,23 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
         const vertexIndex = i * (maxJ + 1) + j
         if (vertexIndex < positions.length / 3) {
           positions[vertexIndex * 3 + 2] = meshArray[i][j] * 10 // Scale for visibility
+          // Heatmap color based on normalized Z (blue low -> red high)
+          const norm = (meshArray[i][j] - zMin) / Math.max(1e-6, (zMax - zMin))
+          const r = norm
+          const g = 0.2 + 0.6 * (1 - Math.abs(norm - 0.5) * 2) // more at mid
+          const b = 1 - norm
+          colors[vertexIndex * 3 + 0] = r
+          colors[vertexIndex * 3 + 1] = g
+          colors[vertexIndex * 3 + 2] = b
         }
       }
     }
     
     geometry.attributes.position.needsUpdate = true
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
     geometry.computeVertexNormals()
 
-    return { geometry, points: meshPoints }
+    return { geometry, points: meshPoints, zMin, zMax }
   }, [meshData])
 
   if (!geometry) {
@@ -231,8 +243,8 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
   // Calculate scale information
   const maxI = Math.max(...points.map(p => p.i))
   const maxJ = Math.max(...points.map(p => p.j))
-  const minZ = Math.min(...points.map(p => p.z))
-  const maxZ = Math.max(...points.map(p => p.z))
+  const minZ = zMin
+  const maxZ = zMax
   const zRange = maxZ - minZ
   const scaleFactor = 10 // Z scaling factor for visibility
 
@@ -247,7 +259,7 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
         </div>
       </div>
       <div className="h-96 border border-gray-300 rounded relative">
-        <Canvas camera={{ position: [0, 0, 8], fov: 50 }}>
+        <Canvas camera={{ position: [6, 6, 10], fov: 50 }}>
           <ambientLight intensity={0.6} />
           <directionalLight position={[5, 5, 5]} intensity={0.8} />
           
@@ -295,13 +307,13 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
           </mesh>
           
           {/* Bed mesh surface */}
-          <mesh ref={meshRef} geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
-            <meshStandardMaterial 
-              color="#4f46e5" 
+          <mesh ref={meshRef} geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.3, 0]}>
+            <meshStandardMaterial
+              vertexColors
               wireframe={showWireframe}
               transparent
-              opacity={0.8}
-              side={THREE.DoubleSide} // Show both sides
+              opacity={0.95}
+              side={THREE.DoubleSide}
             />
           </mesh>
           
@@ -315,7 +327,7 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
           
           {/* Wireframe overlay when not in wireframe mode */}
           {!showWireframe && (
-            <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]}>
+            <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.3, 0]}>
               <meshBasicMaterial 
                 color="#000000" 
                 wireframe={true}
@@ -330,9 +342,9 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
             enablePan={true} 
             enableZoom={true} 
             enableRotate={true}
-            minPolarAngle={0}
-            maxPolarAngle={Math.PI / 2}
-            target={[0, 0, 0]}
+            minPolarAngle={Math.PI / 6}
+            maxPolarAngle={(5 * Math.PI) / 12}
+            target={[0, -0.3, 0]}
           />
           
           {/* Colored Axis Labels - Positioned at top-left corner */}
@@ -399,7 +411,7 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
 }
 
 // Main Bed Mesh Visualization Component
-const BedMeshVisualization = () => {
+const BedMeshVisualization = ({ showStatus = true, showActions = true }) => {
   const [viewMode, setViewMode] = useState('3d') // '2d' or '3d'
   const [colorScheme, setColorScheme] = useState('heatmap') // 'heatmap', 'grayscale', 'rainbow'
   const [showValues, setShowValues] = useState(true)
@@ -483,6 +495,7 @@ const BedMeshVisualization = () => {
           </div>
         </div>
         
+        {showActions && (
         <div className="flex flex-wrap gap-2">
           <button
             onClick={handleFetchMesh}
@@ -512,10 +525,11 @@ const BedMeshVisualization = () => {
             Process Data
           </button>
         </div>
+        )}
       </div>
 
       {/* Bed leveling status */}
-      {printerSettings?.bedLeveling && (
+      {showStatus && printerSettings?.bedLeveling && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <div className="flex items-center justify-between">
             <div>

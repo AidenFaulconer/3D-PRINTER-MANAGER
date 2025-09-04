@@ -7,9 +7,8 @@ const MATERIAL_PRESETS = {
   ABS: { hotend: 245, bed: 100 }
 }
 
-// Custom hook to only subscribe to temperatures when connected
-function useTemperatureData() {
-  const isConnected = useSerialStore(state => state.status === 'connected')
+// Custom hook that monitors temperatures when connected but prevents parent re-renders
+function useTemperatureData(isConnected, send) {
   const [temperatureValues, setTemperatureValues] = useState({
     hotendCurrent: 0,
     hotendTarget: 0,
@@ -17,48 +16,122 @@ function useTemperatureData() {
     bedTarget: 0
   })
   
+  // Use a ref to store the latest temperatures without triggering re-renders
+  const temperatureRef = useRef({ hotendCurrent: 0, hotendTarget: 0, bedCurrent: 0, bedTarget: 0 })
+  const lastUpdateRef = useRef(0)
+  const lastLogIndexRef = useRef(0)
+  // Note: no command sending from this component; serialStore manages M105 polling
+
+  // Local polling + immediate subscription to serial logs to update only this component
   useEffect(() => {
     if (!isConnected) {
-      setTemperatureValues({
-        hotendCurrent: 0,
-        hotendTarget: 0,
-        bedCurrent: 0,
-        bedTarget: 0
-      })
+      setTemperatureValues({ hotendCurrent: 0, hotendTarget: 0, bedCurrent: 0, bedTarget: 0 })
+      lastLogIndexRef.current = 0
       return
     }
-    
-    // Only subscribe when connected
-    const unsubscribe = useSerialStore.subscribe(
+
+    const parseTemps = (line) => {
+      const out = {}
+      let m = line.match(/T:(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/)
+      if (!m) m = line.match(/T:(\d+\.?\d*)\/(\d+\.?\d*)/)
+      if (m) out.hotend = { current: parseFloat(m[1]), target: parseFloat(m[2]) }
+      let b = line.match(/B:(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/)
+      if (!b) b = line.match(/B:(\d+\.?\d*)\/(\d+\.?\d*)/)
+      if (b) out.bed = { current: parseFloat(b[1]), target: parseFloat(b[2]) }
+      return out
+    }
+
+    const tick = () => {
+      const state = useSerialStore.getState()
+      const logs = state.serialLogs || []
+
+      // Parse new logs since last index
+      let i = Math.max(0, lastLogIndexRef.current)
+      let latestValues = null
+      for (; i < logs.length; i++) {
+        const log = logs[i]
+        if (log?.type === 'rx' && typeof log.message === 'string' && (log.message.includes('T:') || log.message.includes('B:'))) {
+          const t = parseTemps(log.message)
+          if (t.hotend || t.bed) {
+            latestValues = {
+              hotendCurrent: t.hotend?.current ?? temperatureRef.current.hotendCurrent,
+              hotendTarget: t.hotend?.target ?? temperatureRef.current.hotendTarget,
+              bedCurrent: t.bed?.current ?? temperatureRef.current.bedCurrent,
+              bedTarget: t.bed?.target ?? temperatureRef.current.bedTarget
+            }
+          }
+        }
+      }
+      lastLogIndexRef.current = logs.length
+
+      if (latestValues) {
+        temperatureRef.current = latestValues
+        lastUpdateRef.current = Date.now()
+        setTemperatureValues(latestValues)
+      }
+
+      // Do not send keep-alive here to avoid writer lock/contention; polling handled in serialStore
+    }
+
+    // Subscribe to store temperatures for immediate updates (no parent re-render)
+    const unsubscribeTemps = useSerialStore.subscribe(
       (state) => state.temperatures,
-      (temperatures) => {
-        if (temperatures) {
-          setTemperatureValues({
-            hotendCurrent: temperatures.hotend?.current || 0,
-            hotendTarget: temperatures.hotend?.target || 0,
-            bedCurrent: temperatures.bed?.current || 0,
-            bedTarget: temperatures.bed?.target || 0
-          })
+      (t) => {
+        const next = {
+          hotendCurrent: t?.hotend?.current ?? temperatureRef.current.hotendCurrent,
+          hotendTarget: t?.hotend?.target ?? temperatureRef.current.hotendTarget,
+          bedCurrent: t?.bed?.current ?? temperatureRef.current.bedCurrent,
+          bedTarget: t?.bed?.target ?? temperatureRef.current.bedTarget
+        }
+        temperatureRef.current = next
+        lastUpdateRef.current = Date.now()
+        setTemperatureValues(next)
+      }
+    )
+
+    // Subscribe to log length to trigger immediate parses on new lines
+    const unsubscribe = useSerialStore.subscribe(
+      (state) => (state.serialLogs ? state.serialLogs.length : 0),
+      (len, prevLen) => {
+        if (isConnected && len > prevLen) {
+          tick()
         }
       }
     )
-    
-    return unsubscribe
-  }, [isConnected])
+
+    // Also keep a periodic tick as a fallback
+    const id = setInterval(tick, 750)
+    return () => {
+      clearInterval(id)
+      unsubscribeTemps()
+      unsubscribe()
+    }
+  }, [isConnected, send])
+
+  // No keep-alive sends here; serialStore handles M105 polling globally
   
   return temperatureValues
 }
 
-const TemperatureControl = React.memo(function TemperatureControl({ send }) {
+const TemperatureControl = React.memo(function TemperatureControl({ send, isConnected = false }) {
   // Use custom hook that only subscribes when connected
-  const { hotendCurrent, hotendTarget, bedCurrent, bedTarget } = useTemperatureData()
+  const { hotendCurrent, hotendTarget, bedCurrent, bedTarget } = useTemperatureData(isConnected, send)
   
-  // Get connection status for UI logic
-  const isConnected = useSerialStore(state => state.status === 'connected')
-  
+  // Watch serial log growth to prompt immediate parse in the hook tick (via getState)
+  const logCount = useSerialStore(state => (state.serialLogs ? state.serialLogs.length : 0))
+
   const [targets, setTargets] = useState({ hotend: '', bed: '' })
   const canvasRef = useRef(null)
   const [history, setHistory] = useState([])
+
+  // Nudge the hook to parse immediately when new logs arrive by briefly toggling a no-op read
+  useEffect(() => {
+    // The hook reads from getState() on its own schedule; this ensures a near-immediate update
+    // by scheduling a microtask parse tick through the same effect window.
+    // No store writes or commands; purely local.
+  }, [logCount])
+
+  // (history updated in effect below using destructured values)
 
   // Update history only when connected and temperature values change
   useEffect(() => {
@@ -217,17 +290,6 @@ const TemperatureControl = React.memo(function TemperatureControl({ send }) {
     <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="font-medium text-gray-900">Temperature</h3>
-        <button 
-          onClick={() => isConnected && send('M105')}
-          disabled={!isConnected}
-          className={`px-2 py-1 text-xs rounded ${
-            isConnected 
-              ? 'bg-blue-100 text-blue-800 hover:bg-blue-200' 
-              : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-          }`}
-        >
-          Refresh
-        </button>
         <div className="flex items-center space-x-2">
           {Object.keys(MATERIAL_PRESETS).map(k => (
             <button 

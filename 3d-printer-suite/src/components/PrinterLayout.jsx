@@ -8,28 +8,28 @@ import CalibrationStep from './CalibrationStep'
 import IssueTracker from './IssueTracker'
 import ProfileManagement from './ProfileManagement'
 import MaterialManagement from './MaterialManagement'
+import ProfilesMaterials from './ProfilesMaterials'
 import SerialPanel from './SerialPanel'
 import PrinterControlPanel from './PrinterControlPanel'
-import ConfigurationManagementTab from './ConfigurationManagementTab'
-import ConfigurationManager from './ConfigurationManager'
 import { calibrationSteps, getCalibrationStep } from '../data/calibrationSteps'
 
 const PrinterLayout = memo(({ onBackToDashboard }) => {
   const [selectedStep, setSelectedStep] = useState('config')
-  const { activePrinterId } = usePrintersStore()
+  const { activePrinterId, getActivePrinter } = usePrintersStore()
   const { status: serialStatus, sendCommand } = useSerialConnection()
   
   // Only subscribe to the specific printer data we need for this component
-  const printerBasicInfo = usePrintersStore(state => {
-    const activePrinter = state.printers.find(p => p.id === state.activePrinterId)
-    if (!activePrinter) return null
-    return {
-      name: activePrinter.name,
-      model: activePrinter.model,
-      firmware: activePrinter.firmware,
-      calibrationSteps: activePrinter.calibrationSteps
-    }
-  })
+  const printerBasicInfo =getActivePrinter();
+  //  usePrintersStore(state => {
+  //   const activePrinter = state.printers.find(p => p.id === state.activePrinterId)
+  //   if (!activePrinter) return null
+  //   return {
+  //     name: activePrinter.name,
+  //     model: activePrinter.model,
+  //     firmware: activePrinter.firmware,
+  //     calibrationSteps: activePrinter.calibrationSteps
+  //   }
+  // })
   
   // Memoize serial props to prevent unnecessary re-renders
   const serialProps = useMemo(() => ({
@@ -54,19 +54,11 @@ const PrinterLayout = memo(({ onBackToDashboard }) => {
       component: PrinterConfig
     },
     {
-      id: 'profiles',
-      name: 'Profiles',
+      id: 'profilesMaterials',
+      name: 'Profiles & Materials',
       icon: FileText,
-      description: 'Manage slicer profiles (create, import, export)',
-      component: ProfileManagement,
-      category: 'Profiles'
-    },
-    {
-      id: 'materials',
-      name: 'Materials',
-      icon: FileText,
-      description: 'Manage materials and link to profiles',
-      component: MaterialManagement,
+      description: 'Manage slicer profiles and materials together',
+      component: ProfilesMaterials,
       category: 'Profiles'
     },
     {
@@ -91,22 +83,6 @@ const PrinterLayout = memo(({ onBackToDashboard }) => {
       description: 'USB serial connection and G-code terminal',
       component: SerialPanel,
       category: 'Diagnostics'
-    },
-    {
-      id: 'configuration',
-      name: 'Configuration',
-      icon: Settings,
-      description: 'Comprehensive printer settings management and editing',
-      component: ConfigurationManagementTab,
-      category: 'Configuration'
-    },
-    {
-      id: 'configManager',
-      name: 'Config Manager',
-      icon: Settings,
-      description: 'Advanced configuration management with snapshots and bulk operations',
-      component: ConfigurationManager,
-      category: 'Configuration'
     },
     {
       id: 'issueTracker',

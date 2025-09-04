@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState, useRef } from 'react'
 import useSerialStore from '../stores/serialStore'
 import TemperatureChart from './controls/TemperatureChart'
 
@@ -8,21 +8,60 @@ const useMonitorState = () => {
   const status = useSerialStore(state => state.status)
   const sendCommand = useSerialStore(state => state.sendCommand)
   
-  // Subscribe to connection status first
-  const isConnected = useSerialStore(state => state.status === 'connected')
-  
-  // Only subscribe to temperature data when connected to prevent unnecessary state changes
-  const temperatureData = useSerialStore(state => {
-    // Return null when not connected to prevent any subscription updates
-    if (state.status !== 'connected') return null
-    return state.temperatures
+  // Use polling to monitor temperatures when connected but prevent parent re-renders
+  const [temperatureValues, setTemperatureValues] = useState({
+    hotendCurrent: 0,
+    hotendTarget: 0,
+    bedCurrent: 0,
+    bedTarget: 0
   })
   
-  // Extract temperature values with defaults
-  const hotendCurrent = temperatureData?.hotend?.current || 0
-  const hotendTarget = temperatureData?.hotend?.target || 0
-  const bedCurrent = temperatureData?.bed?.current || 0
-  const bedTarget = temperatureData?.bed?.target || 0
+  // Use a ref to store the latest temperatures without triggering re-renders
+  const temperatureRef = useRef({ hotendCurrent: 0, hotendTarget: 0, bedCurrent: 0, bedTarget: 0 })
+  
+  useEffect(() => {
+    if (status !== 'connected') {
+      setTemperatureValues({
+        hotendCurrent: 0,
+        hotendTarget: 0,
+        bedCurrent: 0,
+        bedTarget: 0
+      })
+      return
+    }
+    
+    // Subscribe to temperature changes using a completely isolated approach
+    // This subscription ONLY reads from store, NEVER writes to it
+    const unsubscribe = useSerialStore.subscribe(
+      (state) => state.temperatures,
+      (temperatures) => {
+        // Only update local state, never touch the store
+        if (temperatures) {
+          const newValues = {
+            hotendCurrent: temperatures.hotend?.current || 0,
+            hotendTarget: temperatures.hotend?.target || 0,
+            bedCurrent: temperatures.bed?.current || 0,
+            bedTarget: temperatures.bed?.target || 0
+          }
+          
+          // Only update if values actually changed to prevent unnecessary re-renders
+          if (
+            temperatureRef.current.hotendCurrent !== newValues.hotendCurrent ||
+            temperatureRef.current.hotendTarget !== newValues.hotendTarget ||
+            temperatureRef.current.bedCurrent !== newValues.bedCurrent ||
+            temperatureRef.current.bedTarget !== newValues.bedTarget
+          ) {
+            temperatureRef.current = newValues
+            setTemperatureValues(newValues)
+          }
+        }
+      }
+    )
+    
+    return unsubscribe
+  }, [status])
+  
+  const { hotendCurrent, hotendTarget, bedCurrent, bedTarget } = temperatureValues
   
   // Subscribe to all logs and filter with useMemo to prevent infinite re-renders
   const allLogs = useSerialStore(state => state.serialLogs)

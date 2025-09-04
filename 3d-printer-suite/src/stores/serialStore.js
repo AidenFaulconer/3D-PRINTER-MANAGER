@@ -1053,37 +1053,22 @@ const useSerialStore = create(
             if (tempMonitorRef) {
               clearInterval(tempMonitorRef)
             }
-            // Start temperature monitoring
+            // Start temperature monitoring (throttled, avoid overlaps)
             tempMonitorRef = setInterval(async () => {
-              const state = get()
-              if (state.status === 'connected' && state.port?.writable) {
-                try {
-                  console.log('SerialStore: Sending M105 temperature request')
-                  await sendCommand('M105')
-                  // Update last successful poll time
-                  set((state) => ({
-                    temperatures: {
-                      ...state.temperatures,
-                      lastPoll: Date.now()
-                    }
-                  }), false, 'updateTempPollTime')
-                } catch (e) {
-                  // Log but continue monitoring
-                  appendSerialLog(`Temperature monitoring error: ${e.message}`, 'err')
-                  // If we haven't received temps for a while, reset them
-                  const state = get()
-                  const lastPoll = state.temperatures?.lastPoll || 0
-                  if (Date.now() - lastPoll > 10000) {
-                    set((state) => ({
-                      temperatures: {
-                        hotend: { current: 0, target: 0 },
-                        bed: { current: 0, target: 0 },
-                        timestamp: Date.now(),
-                        lastPoll: Date.now()
-                      }
-                    }), false, 'resetTemperatures')
+              const st = get()
+              if (st.status !== 'connected' || !st.port?.writable) return
+              // Avoid spamming if writer is already locked by another command stream
+              if (writerLockPromise) return
+              try {
+                await sendCommand('M105')
+                set((state) => ({
+                  temperatures: {
+                    ...state.temperatures,
+                    lastPoll: Date.now()
                   }
-                }
+                }), false, 'updateTempPollTime')
+              } catch (e) {
+                appendSerialLog(`Temperature monitoring error: ${e.message}`, 'err')
               }
             }, 2000)
 
@@ -1197,7 +1182,16 @@ const useSerialStore = create(
 
         try {
           // Get writer
-          writer = await state.port.writable.getWriter();
+          // Avoid nested getWriter when stream is locked
+          try {
+            writer = state.port.writable.getWriter();
+          } catch (e) {
+            releaseWriterLock();
+            appendSerialLog('Writer was locked, retrying shortly…', 'sys')
+            await new Promise(r => setTimeout(r, 50))
+            await acquireWriterLock();
+            writer = state.port.writable.getWriter();
+          }
           
           // Prepare and log command
           const command = gcode.trim().toUpperCase();
@@ -1223,8 +1217,10 @@ const useSerialStore = create(
           
           await writer.write(data);
           
-          // Wait for command processing
-          await new Promise(resolve => setTimeout(resolve, 50));
+          // Wait for command processing, but if a program stream is active, shorten to keep throughput
+          const st2 = get()
+          const waitMs = st2.isStreamingProgram ? 5 : 50
+          await new Promise(resolve => setTimeout(resolve, waitMs));
           
         } catch (e) {
           appendSerialLog(`Send error: ${e.message}`, 'err');
@@ -1246,6 +1242,70 @@ const useSerialStore = create(
           if (!line || /^\s*(;|#)/.test(line)) continue
           await sendCommand(line)
           if (delayMs) await new Promise((r) => setTimeout(r, delayMs))
+        }
+      }
+
+      // Stream a full G-code program with optional ok-wait and progress callback
+      const sendGcodeProgram = async (programText, options = {}) => {
+        const {
+          delayMs = 60,
+          waitForOk = true,
+          okTimeoutMs = 5000,
+          onProgress
+        } = options
+
+        const state = get()
+        if (!state.port || !state.port.writable || state.status !== 'connected') {
+          appendSerialLog(`Cannot start program - not connected. Status: ${state.status}`, 'err')
+          throw new Error('Not connected')
+        }
+
+        const lines = String(programText)
+          .split(/\r?\n/)
+          .map(l => l.trim())
+          .filter(l => l.length > 0 && !l.startsWith(';') && !l.startsWith('#'))
+
+        let sent = 0
+
+        const awaitOk = () => new Promise((resolve, reject) => {
+          if (!waitForOk) return resolve()
+          let resolved = false
+          const start = Date.now()
+          const unsub = useSerialStore.subscribe(
+            s => (s.serialLogs.length),
+            () => {
+              const recent = get().serialLogs.slice(-10)
+              const hasOk = recent.some(l => (l.type === 'rx') && /^ok\b/i.test(String(l.message).trim()))
+              const hasErr = recent.some(l => (l.type === 'rx') && /error|unknown|invalid/i.test(l.message))
+              if (hasOk && !resolved) {
+                resolved = true
+                unsub()
+                resolve()
+              } else if (hasErr && !resolved) {
+                resolved = true
+                unsub()
+                reject(new Error('Printer error reported'))
+              } else if (Date.now() - start > okTimeoutMs && !resolved) {
+                resolved = true
+                unsub()
+                resolve() // be lenient if ok not echoed
+              }
+            }
+          )
+        })
+
+        set({ isStreamingProgram: true }, false, 'startProgramStream')
+        try {
+          for (let i = 0; i < lines.length; i++) {
+            await sendCommand(lines[i])
+            if (delayMs) await new Promise(r => setTimeout(r, delayMs))
+            try { await awaitOk() } catch (_) {}
+            sent = i + 1
+            if (typeof onProgress === 'function') onProgress(sent, lines.length)
+          }
+          return { sent, total: lines.length }
+        } finally {
+          set({ isStreamingProgram: false }, false, 'endProgramStream')
         }
       }
 
@@ -1471,6 +1531,7 @@ const useSerialStore = create(
         
         // Log cleanup
         logCleanupInterval: null,
+        isStreamingProgram: false,
 
         // Actions
         setPort: (port) => set({ port }, false, 'setPort'),
@@ -1521,6 +1582,7 @@ const useSerialStore = create(
         disconnect,
         sendCommand,
         sendCommands,
+        sendGcodeProgram,
         fetchBedLevel,
         runBedLeveling,
         processBedMeshData,
@@ -1602,16 +1664,42 @@ const useSerialStore = create(
                   appendSerialLog(`Parsed M503 settings: ${Object.keys(parsedSettings).join(', ')}`, 'sys')
                   
                   // Store settings in printer store for persistence
-                  import('./printersStore').then(({ getState: getPrintersState }) => {
-                    const printersState = getPrintersState()
-                    const activePrinterId = printersState.activePrinterId
+                  import('./printersStore').then((mod) => {
+                    const printersStoreHook = mod.default
+                    const printersStateObj = printersStoreHook.getState()
+                    let activePrinterId = printersStateObj.activePrinterId
+                    
+                    console.log('SerialStore: Storing M503 settings')
+                    console.log('SerialStore: activePrinterId:', activePrinterId)
+                    console.log('SerialStore: parsedSettings:', parsedSettings)
+                    console.log('SerialStore: printersState:', printersStateObj)
+                    
+                    // If no active printer, create a default one
+                    if (!activePrinterId) {
+                      const defaultPrinter = {
+                        name: 'Connected Printer',
+                        model: 'Unknown',
+                        firmware: 'Unknown',
+                        bedSize: { x: 220, y: 220, z: 250 },
+                        firmwareConfiguration: {},
+                        calibrationSteps: [],
+                        lastUpdated: new Date().toISOString()
+                      }
+                      printersStoreHook.getState().addPrinter(defaultPrinter)
+                      activePrinterId = printersStoreHook.getState().activePrinterId
+                      console.log('SerialStore: Created default printer with ID:', activePrinterId)
+                      appendSerialLog(`Created default printer with ID: ${activePrinterId}`, 'sys')
+                    }
                     
                     if (activePrinterId && parsedSettings) {
-                      const { updatePrinterSettings } = getPrintersState()
-                      updatePrinterSettings(activePrinterId, parsedSettings)
+                      printersStoreHook.getState().updatePrinterSettings(activePrinterId, parsedSettings)
                       appendSerialLog(`Printer settings stored for printer ${activePrinterId}`, 'sys')
+                    } else {
+                      console.log('SerialStore: Cannot store settings - activePrinterId:', activePrinterId, 'parsedSettings:', parsedSettings)
+                      appendSerialLog(`Cannot store settings - activePrinterId: ${activePrinterId}, parsedSettings: ${!!parsedSettings}`, 'err')
                     }
                   }).catch(error => {
+                    console.log('SerialStore: Error storing printer settings:', error)
                     appendSerialLog(`Error storing printer settings: ${error.message}`, 'err')
                   })
                   

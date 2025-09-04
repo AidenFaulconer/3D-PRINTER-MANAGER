@@ -5,6 +5,7 @@ import MovementControl from './controls/MovementControl'
 import TemperatureControl from './controls/TemperatureControl'
 import ExtrusionControl from './controls/ExtrusionControl'
 import FanControl from './controls/FanControl'
+import BabyStepControl from './controls/BabyStepControl'
 import UtilitiesControl from './controls/UtilitiesControl'
 import BedMeshVisualization from './BedMeshVisualization'
 import PrinterSettingsDisplay from './PrinterSettingsDisplay'
@@ -85,16 +86,17 @@ const PrinterControlPanel = React.memo(() => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <MovementControl send={send} requestPosition={requestPosition} lastPosition={position} />
-        <TemperatureControl send={send} requestTemps={requestTemps} />
+        <TemperatureControl send={send} requestTemps={requestTemps} isConnected={status === 'connected'} />
         <ExtrusionControl send={send} preheat={preheat} />
         <FanControl send={send} />
+        <BabyStepControl send={send} isConnected={status === 'connected'} />
         <UtilitiesControl send={send} />
       </div>
 
-      {/* Bed Leveling Visualization */}
+      {/* Bed Leveling Visualization (condensed: no status/actions) */}
       <div className="bg-white rounded-lg shadow p-4">
         <h3 className="text-lg font-semibold mb-4">Bed Leveling</h3>
-        <BedMeshVisualization />
+        <BedMeshVisualization showStatus={false} showActions={false} />
       </div>
 
       {/* Printer Settings */}

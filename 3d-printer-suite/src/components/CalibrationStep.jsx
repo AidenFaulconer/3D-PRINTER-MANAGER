@@ -21,13 +21,20 @@ import useSerialStore from '../stores/serialStore'
 
 import CalibrationReportModal from './CalibrationReportModal'
 import CalibrationMonitor from './CalibrationMonitor'
+import TemperatureControl from './controls/TemperatureControl'
 import BedLevelVisualization from './BedLevelVisualization'
 
 const Tabs = ['Instructions', 'Visuals', 'Configuration', 'Results']
 
-// Separate monitor component to prevent re-renders
+// Separate monitor component to prevent re-renders (TemperatureControl-only for this view)
 const MonitorSection = memo(() => {
-  return <CalibrationMonitor />
+  const status = useSerialStore(state => state.status)
+  const send = useSerialStore(state => state.sendCommand)
+  return (
+    <div className="mb-4">
+      <TemperatureControl send={send} isConnected={status === 'connected'} />
+    </div>
+  )
 })
 
 // Separate control section to prevent re-renders
@@ -68,8 +75,8 @@ const ControlSection = memo(({
         </button>
         <button
           onClick={sendToPrinter}
-          disabled={serialStatus !== 'connected' || !canProceed || execState.running}
-          className={`px-4 py-2 rounded-md transition-colors ${serialStatus === 'connected' && canProceed && !execState.running ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
+          disabled={serialStatus !== 'connected' || !generatedGcode || execState.running}
+          className={`px-4 py-2 rounded-md transition-colors ${serialStatus === 'connected' && generatedGcode && !execState.running ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
         >
           Send to Printer
         </button>
@@ -95,7 +102,7 @@ const ControlSection = memo(({
             <h4 className="font-medium text-gray-900">Generated G-code</h4>
             <div className="flex items-center gap-2">
               <button onClick={copyGcode} className="px-2 py-1 bg-gray-100 rounded text-sm">Copy</button>
-              <button onClick={()=>setShowGcode(!showGcode)} className="px-2 py-1 bg-gray-100 rounded text-sm">{showGcode ? 'Hide' : 'Show'}</button>
+              <button onClick={()=>{ const v=!showGcode; setShowGcode(v); try{ if(step?.id){ sessionStorage.setItem(`gcode_show_${step.id}`, v?'1':'0') } } catch{} }} className="px-2 py-1 bg-gray-100 rounded text-sm">{showGcode ? 'Hide' : 'Show'}</button>
             </div>
           </div>
           {showGcode && (
@@ -168,7 +175,9 @@ const ConfigurationTab = memo(({
   return (
     prevProps.canProceed === nextProps.canProceed &&
     prevProps.execState.running === nextProps.execState.running &&
-    prevProps.execState.progress === nextProps.execState.progress
+    prevProps.execState.progress === nextProps.execState.progress &&
+    prevProps.showGcode === nextProps.showGcode &&
+    prevProps.generatedGcode === nextProps.generatedGcode
   )
 })
 
@@ -312,6 +321,27 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
     }
   }, [hasActivePrinter, step.id]) // Removed generatedGcode and results from dependencies
 
+  useEffect(() => {
+    // Restore from sessionStorage to survive parent remounts
+    if (!step?.id) return
+    // For first-layer, always prefer latest generator: clear any cached legacy preview
+    if (step.id === 'first-layer') {
+      try {
+        sessionStorage.removeItem(`gcode_${step.id}`)
+        sessionStorage.removeItem(`gcode_show_${step.id}`)
+      } catch {}
+    }
+    const savedGcode = sessionStorage.getItem(`gcode_${step.id}`)
+    const savedShow = sessionStorage.getItem(`gcode_show_${step.id}`)
+    if (savedGcode && !gcodeInitializedRef.current) {
+      setGeneratedGcode(savedGcode)
+      gcodeInitializedRef.current = true
+    }
+    if (savedShow != null) {
+      setShowGcode(savedShow === '1')
+    }
+  }, [step?.id])
+
   if (!step) {
     return (
       <div className="text-center py-12">
@@ -371,13 +401,16 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
         setShowGcode(true)
         gcodeInitializedRef.current = true // Mark as initialized to prevent overwriting
         
-        // Save to store
-        if (activePrinterId && step?.id) {
-          updateCalibrationStep(activePrinterId, step.id, { 
-            generatedGcode: gcode,
-            inputValues: inputValuesRef.current
-          })
-        }
+        // Persist locally to avoid losing on parent rerenders
+        try {
+          if (step?.id && step.id !== 'first-layer') { // avoid caching legacy preview for first-layer
+            sessionStorage.setItem(`gcode_${step.id}`, gcode)
+            sessionStorage.setItem(`gcode_show_${step.id}`, '1')
+          }
+        } catch {}
+        
+        // IMPORTANT: Do NOT write to the global store here to avoid triggering parent rerenders.
+        // Persisting is handled explicitly in saveConfiguration().
       } else {
         console.error('No gcode generated')
         alert('Failed to generate G-code. Please check the console for details.')
@@ -386,11 +419,11 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
       console.error('Error generating gcode:', error)
       alert(`Error generating G-code: ${error.message}`)
     }
-  }, [step?.gcode, step?.id, step?.inputs, activePrinterId, updateCalibrationStep])
+  }, [step?.gcode, step?.id, step?.inputs])
 
   const sendToPrinter = useCallback(async () => {
-    if (serialProps.status !== 'connected') {
-      console.log('Cannot send to printer - not connected. Current status:', serialProps.status)
+    if (serialStatus !== 'connected') {
+      console.log('Cannot send to printer - not connected. Current status:', serialStatus)
       return
     }
     if (!generatedGcode) {
@@ -424,35 +457,27 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
     setExecState(initialState)
     
     try {
-      for (let i = 0; i < payload.length; i++) {
-        // Get current state safely
-        const currentState = execState || initialState
-        
-        // Check execution state
-        if (currentState.paused) { 
-          i--
-          await new Promise(r=>setTimeout(r,200))
-          continue 
+      const sendProgram = useSerialStore.getState().sendGcodeProgram
+      if (typeof sendProgram === 'function') {
+        await sendProgram(payload.join('\n'), {
+          delayMs: 60,
+          waitForOk: true,
+          okTimeoutMs: 5000,
+          onProgress: (progress, total) => setExecState(prev => ({ ...(prev || initialState), progress, total }))
+        })
+      } else {
+        // Fallback: line-by-line
+        for (let i = 0; i < payload.length; i++) {
+          const currentState = execState || initialState
+          if (currentState.paused) { i--; await new Promise(r=>setTimeout(r,200)); continue }
+          if (!currentState.running) break
+          await sendCommand(payload[i])
+          setExecState(prev => ({ ...(prev || initialState), progress: i+1 }))
+          await new Promise(r=>setTimeout(r, 60))
         }
-        if (!currentState.running) break
-        
-        await sendCommand(payload[i])
-        
-        // Update progress safely
-        setExecState(prev => ({
-          ...(prev || initialState),
-          progress: i+1
-        }))
-        
-        // Fixed delay between commands
-        await new Promise(r=>setTimeout(r, 60))
       }
     } finally {
-      // Ensure we always reset running state safely
-      setExecState(prev => ({
-        ...(prev || initialState),
-        running: false
-      }))
+      setExecState(prev => ({ ...(prev || initialState), running: false }))
     }
   }, [serialStatus, sendCommand, generatedGcode, execState, generateGcode])
 
@@ -520,6 +545,88 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
     'Configuration': handleConfigurationTab,
     'Results': handleResultsTab
   }), [handleInstructionsTab, handleVisualsTab, handleConfigurationTab, handleResultsTab])
+
+  // Reference images for "GOOD" vs "BAD" outcomes per step
+  const referenceImageMap = useMemo(() => ({
+    'first-layer': {
+      good: {
+        urls: [
+          'https://reprap.org/mediawiki/images/d/d8/First_layer_good_example.jpg',
+          'https://upload.wikimedia.org/wikipedia/commons/1/1b/3D_print_first_layer_good_example.jpg'
+        ],
+        caption: 'GOOD: Smooth lines, slight squish, even surface'
+      },
+      bad: {
+        urls: [
+          'https://reprap.org/mediawiki/images/3/3b/First_layer_bad_example.jpg',
+          'https://upload.wikimedia.org/wikipedia/commons/5/57/3D_print_first_layer_bad_example.jpg'
+        ],
+        caption: 'BAD: Under-extruded/too high Z — lines separated and rough'
+      }
+    },
+    'extruder-esteps': {
+      good: {
+        urls: [
+          'https://reprap.org/mediawiki/images/0/0e/Extrusion_good_example.jpg',
+          'https://upload.wikimedia.org/wikipedia/commons/7/7e/3D_print_good_extrusion_example.jpg'
+        ],
+        caption: 'GOOD: Accurate measured extrusion length'
+      },
+      bad: {
+        urls: [
+          'https://reprap.org/mediawiki/images/4/4e/Extrusion_bad_example.jpg',
+          'https://upload.wikimedia.org/wikipedia/commons/4/4d/3D_print_under_over_extrusion_example.jpg'
+        ],
+        caption: 'BAD: Over/under extrusion — inaccurate length vs requested'
+      }
+    }
+  }), [])
+
+  const ReferenceImage = ({ urls = [], alt = '', caption = '', fallbackQuery = '' }) => {
+    const [idx, setIdx] = useState(0)
+    const current = urls[idx]
+    return (
+      <div>
+        {current ? (
+          <img
+            src={current}
+            alt={alt}
+            className="w-full h-56 object-cover rounded"
+            onError={() => setIdx((i) => i + 1)}
+          />
+        ) : (
+          <div className="w-full h-56 bg-gray-100 rounded flex items-center justify-center text-xs text-gray-500">
+            Image unavailable. {fallbackQuery && (
+              <a
+                className="underline ml-1"
+                href={`https://www.google.com/search?q=${encodeURIComponent(fallbackQuery)}`}
+                target="_blank" rel="noreferrer"
+              >Search examples</a>
+            )}
+          </div>
+        )}
+        {caption && <div className="text-xs text-gray-600 mt-2">{caption}</div>}
+      </div>
+    )
+  }
+
+  // Helper to get privacy-enhanced YouTube embed URL
+  const getEmbedUrl = useCallback((url) => {
+    if (!url) return null
+    try {
+      // Extract video id for common forms
+      // e.g. https://www.youtube.com/watch?v=VIDEOID or youtu.be/VIDEOID
+      const ytIdMatch = url.match(/[?&]v=([^&]+)|youtu\.be\/([^?&/]+)/)
+      const vid = ytIdMatch ? (ytIdMatch[1] || ytIdMatch[2]) : null
+      if (vid) {
+        return `https://www.youtube-nocookie.com/embed/${vid}?rel=0&modestbranding=1&iv_load_policy=3&playsinline=1`
+      }
+      // fallback to original embed transform
+      return url.replace('watch?v=', 'embed/').replace('www.youtube.com', 'www.youtube-nocookie.com') + (url.includes('?') ? '&' : '?') + 'rel=0&modestbranding=1'
+    } catch {
+      return url
+    }
+  }, [])
 
   // Memoize CalibrationMonitor to prevent unnecessary unmounts
   const memoizedMonitor = useMemo(() => (
@@ -709,10 +816,11 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
             <div className="aspect-video bg-black rounded overflow-hidden">
               <iframe
                 className="w-full h-full"
-                src={step.videoUrl.replace('watch?v=', 'embed/')}
+                src={getEmbedUrl(step.videoUrl)}
                 title="Calibration Tutorial"
                 frameBorder="0"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                referrerPolicy="strict-origin-when-cross-origin"
                 allowFullScreen
               />
             </div>
@@ -725,6 +833,29 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
                   <figcaption className="text-xs text-gray-600 mt-1">{v.caption}</figcaption>
                 </figure>
               ))}
+            </div>
+          )}
+          {/* GOOD vs BAD reference gallery */}
+          {referenceImageMap[step.id] && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-white border border-green-200 rounded p-3">
+                <div className="text-sm font-semibold text-green-700 mb-2">GOOD RESULT</div>
+                <ReferenceImage
+                  urls={referenceImageMap[step.id].good.urls}
+                  alt="Good result"
+                  caption={referenceImageMap[step.id].good.caption}
+                  fallbackQuery={`${step.title} good result 3D print`}
+                />
+              </div>
+              <div className="bg-white border border-red-200 rounded p-3">
+                <div className="text-sm font-semibold text-red-700 mb-2">BAD RESULT</div>
+                <ReferenceImage
+                  urls={referenceImageMap[step.id].bad.urls}
+                  alt="Bad result"
+                  caption={referenceImageMap[step.id].bad.caption}
+                  fallbackQuery={`${step.title} bad result 3D print`}
+                />
+              </div>
             </div>
           )}
           {!step.videoUrl && (!step.visualAids || step.visualAids.length === 0) && (

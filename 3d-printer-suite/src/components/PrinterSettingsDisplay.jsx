@@ -5,6 +5,9 @@ import usePrintersStore from '../stores/printersStore'
 const PrinterSettingsDisplay = memo(() => {
   const printerSettings = usePrintersStore(state => {
     const activePrinter = state.printers.find(p => p.id === state.activePrinterId)
+    console.log('PrinterSettingsDisplay: activePrinterId:', state.activePrinterId)
+    console.log('PrinterSettingsDisplay: activePrinter:', activePrinter)
+    console.log('PrinterSettingsDisplay: printerSettings:', activePrinter?.printerSettings)
     return activePrinter?.printerSettings
   })
 
