@@ -87,12 +87,10 @@ function useTemperatureData(isConnected, send) {
       lastLogIndexRef.current = logs.length
 
       if (latestValues) {
-        console.log('TemperatureControl: Parsed temperatures from logs:', latestValues)
         temperatureRef.current = latestValues
         lastUpdateRef.current = Date.now()
         setTemperatureValues(latestValues)
       } else {
-        console.log('TemperatureControl: No new temperature data found in logs')
       }
 
       // Do not send keep-alive here to avoid writer lock/contention; polling handled in serialStore
@@ -102,14 +100,12 @@ function useTemperatureData(isConnected, send) {
     const unsubscribeTemps = useSerialStore.subscribe(
       (state) => state.temperatures,
       (t) => {
-        console.log('TemperatureControl: Store temperatures changed:', t)
         const next = {
           hotendCurrent: t?.hotend?.current ?? temperatureRef.current.hotendCurrent,
           hotendTarget: t?.hotend?.target ?? temperatureRef.current.hotendTarget,
           bedCurrent: t?.bed?.current ?? temperatureRef.current.bedCurrent,
           bedTarget: t?.bed?.target ?? temperatureRef.current.bedTarget
         }
-        console.log('TemperatureControl: Store temperature next values:', next)
         temperatureRef.current = next
         lastUpdateRef.current = Date.now()
         setTemperatureValues(next)
@@ -143,9 +139,8 @@ function useTemperatureData(isConnected, send) {
         
         // Log the command
         useSerialStore.getState().appendSerialLog('M105', 'tx')
-        console.log('TemperatureControl: Sent M105 command for temperature monitoring')
       } catch (e) {
-        console.log('TemperatureControl: M105 send error:', e.message)
+        // Silent error handling
       }
     }, 2000) // Poll every 2 seconds
 
@@ -194,24 +189,17 @@ const TemperatureControl = React.memo(function TemperatureControl({ send, isConn
       setForceUpdate(prev => prev + 1)
     }, 1000) // Update every second
     
-    return () => clearInterval(updateInterval)
+    return () => {
+      clearInterval(updateInterval)
+    }
   }, [isConnected])
 
   // (history updated in effect below using destructured values)
 
   // Update history only when connected and temperature values change
   useEffect(() => {
-    console.log('TemperatureControl: History update effect triggered', {
-      isConnected,
-      hotendCurrent,
-      bedCurrent,
-      hotendTarget,
-      bedTarget
-    })
-    
     // Only update history when connected
     if (!isConnected) {
-      console.log('TemperatureControl: Not connected, clearing history')
       // Clear history when disconnected
       setHistory([])
       return
@@ -225,13 +213,9 @@ const TemperatureControl = React.memo(function TemperatureControl({ send, isConn
         targetBed: bedTarget,
         timestamp: Date.now()
       }
-      console.log('TemperatureControl: Adding new point to history:', newPoint)
       // Keep last 60 points (2 minutes at 2s intervals)
       const newHistory = [...prev, newPoint]
       const finalHistory = newHistory.length > 60 ? newHistory.slice(-60) : newHistory
-      
-      // Also update the store so other components can access temperature history
-      useSerialStore.getState().setTemperatureHistory(finalHistory)
       
       return finalHistory
     })
@@ -241,17 +225,8 @@ const TemperatureControl = React.memo(function TemperatureControl({ send, isConn
   }, [isConnected, hotendCurrent, hotendTarget, bedCurrent, bedTarget])
 
   useEffect(() => {
-    console.log('TemperatureControl: Chart rendering effect triggered', { 
-      historyLength: history.length, 
-      forceUpdate, 
-      isConnected,
-      hotendCurrent,
-      bedCurrent 
-    })
-    
     const canvas = canvasRef.current
     if (!canvas) {
-      console.log('TemperatureControl: No canvas element found')
       return
     }
     
@@ -260,7 +235,6 @@ const TemperatureControl = React.memo(function TemperatureControl({ send, isConn
     const h = canvas.height
     ctx.clearRect(0, 0, w, h)
     if (history.length === 0) {
-      console.log('TemperatureControl: No history data, showing empty state')
       // Draw a simple "No Data" message
       ctx.fillStyle = '#666'
       ctx.font = '16px sans-serif'

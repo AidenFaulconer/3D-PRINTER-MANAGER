@@ -1,7 +1,7 @@
 import { useState, useMemo, memo } from 'react'
 import useSerialConnection from '../hooks/useSerialConnection'
 import { ArrowLeft, Settings, Printer, CheckCircle, Circle, Home, Wrench, Thermometer, Ruler, Zap, FileText, AlertTriangle, TerminalSquare, SlidersHorizontal, MonitorPlay } from 'lucide-react'
-import usePrintersStore from '../stores/printersStore'
+import { useActivePrinterId, useGetActivePrinter } from '../hooks/useStoreSelectors'
 import Logo from './Logo'
 import ThemeToggle from './ThemeToggle'
 import PrinterConfig from './PrinterConfig'
@@ -17,11 +17,12 @@ import { calibrationSteps, getCalibrationStep } from '../data/calibrationSteps'
 
 const PrinterLayout = memo(({ onBackToDashboard }) => {
   const [selectedStep, setSelectedStep] = useState('config')
-  const { activePrinterId, getActivePrinter } = usePrintersStore()
+  const activePrinterId = useActivePrinterId()
+  const getActivePrinter = useGetActivePrinter()
   const { status: serialStatus, sendCommand } = useSerialConnection()
   
   // Only subscribe to the specific printer data we need for this component
-  const printerBasicInfo =getActivePrinter();
+  const printerBasicInfo = getActivePrinter();
   //  usePrintersStore(state => {
   //   const activePrinter = state.printers.find(p => p.id === state.activePrinterId)
   //   if (!activePrinter) return null
@@ -47,6 +48,13 @@ const PrinterLayout = memo(({ onBackToDashboard }) => {
       icon: MonitorPlay,
       description: 'Monitor and control active prints',
       component: () => window.location.href = '#/control'
+    },
+    {
+      id: 'calibration-workflow',
+      name: 'Calibration Workflow',
+      icon: Wrench,
+      description: 'Guided step-by-step calibration process',
+      component: () => window.location.href = '#/calibration'
     },
     {
       id: 'config',

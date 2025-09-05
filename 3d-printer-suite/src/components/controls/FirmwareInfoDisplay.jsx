@@ -6,10 +6,14 @@ const FirmwareInfoDisplay = React.memo(() => {
   const [isVisible, setIsVisible] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   
-  // Subscribe to all logs and filter with useMemo to prevent infinite re-renders
-  const allLogs = useSerialStore(state => state.serialLogs)
-  const m115Logs = useMemo(() => 
-    allLogs.filter(log => 
+  // Use selective subscription to prevent app-wide re-renders
+  const logCount = useSerialStore(state => state.serialLogs?.length || 0)
+  const [m115Logs, setM115Logs] = useState([])
+  
+  useEffect(() => {
+    // Only fetch logs when log count changes
+    const allLogs = useSerialStore.getState().serialLogs || []
+    const newM115Logs = allLogs.filter(log => 
       log.type === 'rx' && 
       (log.message.includes('FIRMWARE_NAME:') || 
        log.message.includes('SOURCE_CODE_URL:') || 
@@ -17,8 +21,9 @@ const FirmwareInfoDisplay = React.memo(() => {
        log.message.includes('MACHINE_TYPE:') || 
        log.message.includes('EXTRUDER_COUNT:') || 
        log.message.includes('Cap:'))
-    ), [allLogs]
-  )
+    )
+    setM115Logs(newM115Logs)
+  }, [logCount])
   const sendCommand = useSerialStore(state => state.sendCommand)
   const serialStatus = useSerialStore(state => state.status)
 

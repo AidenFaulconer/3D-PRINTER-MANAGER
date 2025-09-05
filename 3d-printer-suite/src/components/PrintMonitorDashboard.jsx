@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { GcodeViewer3D } from './GcodeViewer3D'
 import usePrintMonitor from '../hooks/usePrintMonitor'
-import useGcodeFilesStore from '../stores/gcodeFilesStore'
-import useSerialStore from '../stores/serialStore'
+import { useActivePrint, useGetFile, useSerialActions } from '../hooks/useStoreSelectors'
 import BedLevelVisualization from './BedLevelVisualization'
 
 const PrintMonitorDashboard = () => {
@@ -15,8 +14,9 @@ const PrintMonitorDashboard = () => {
     adjustZOffset
   } = usePrintMonitor()
 
-  const { activePrint, getFile } = useGcodeFilesStore()
-  const sendCommand = useSerialStore(state => state.sendCommand)
+  const activePrint = useActivePrint()
+  const getFile = useGetFile()
+  const sendCommand = useSerialActions().sendCommand
   const [startTime, setStartTime] = useState(null)
   const [estimatedTimeRemaining, setEstimatedTimeRemaining] = useState(null)
 

@@ -116,28 +116,28 @@ export const gcodeParameters = {
   'flow-rate': {
     filename: 'flow-rate.gcode',
     parameters: {
-      bedTemp: { placeholder: 'S80', description: 'Bed temperature (°C)' },
-      hotendTemp: { placeholder: 'S185', description: 'Initial hotend temperature (°C)' },
+      bedTemp: { placeholder: 'S90', description: 'Bed temperature (°C)' },
+      hotendTemp: { placeholder: 'S255', description: 'Initial hotend temperature (°C)' },
       finalHotendTemp: { placeholder: 'S235', description: 'Final hotend temperature (°C)' },
-      layerHeight: { placeholder: 'Z0.280', description: 'Layer height (mm)' },
-      retractionDistance: { placeholder: 'E-6', description: 'Retraction distance (mm)' },
-      retractionSpeed: { placeholder: 'F2400', description: 'Retraction speed (mm/min)' },
+      layerHeight: { placeholder: 'Z0.4', description: 'Layer height (mm)' },
+      retractionDistance: { placeholder: 'E-3.2', description: 'Retraction distance (mm)' },
+      retractionSpeed: { placeholder: 'F2700', description: 'Retraction speed (mm/min)' },
       printSpeed: { placeholder: 'F3300', description: 'Print speed (mm/min)' },
       travelSpeed: { placeholder: 'F11000', description: 'Travel speed (mm/min)' },
       enableABL: { placeholder: ';G29', description: 'Enable auto bed leveling (G29)' },
       restoreABL: { placeholder: 'M420 S1', description: 'Restore ABL mesh' }
     },
     defaultValues: {
-      bedTemp: 80,
-      hotendTemp: 185,
+      bedTemp: 90,
+      hotendTemp: 255,
       finalHotendTemp: 235,
-      layerHeight: 0.28,
-      retractionDistance: 6,
-      retractionSpeed: 2400,
+      layerHeight: 0.4,
+      retractionDistance: 3.2,
+      retractionSpeed: 2700,
       printSpeed: 3300,
       travelSpeed: 11000,
       enableABL: false,
-      restoreABL: true
+      restoreABL: false
     }
   },
   'calibration-cube': {
@@ -170,28 +170,28 @@ export const gcodeParameters = {
   'speed-calibration': {
     filename: 'speed.gcode',
     parameters: {
-      bedTemp: { placeholder: 'S80', description: 'Bed temperature (°C)' },
-      hotendTemp: { placeholder: 'S185', description: 'Initial hotend temperature (°C)' },
-      finalHotendTemp: { placeholder: 'S235', description: 'Final hotend temperature (°C)' },
-      layerHeight: { placeholder: 'Z0.280', description: 'Layer height (mm)' },
+      bedTemp: { placeholder: 'S50', description: 'Bed temperature (°C)' },
+      hotendTemp: { placeholder: 'S240', description: 'Initial hotend temperature (°C)' },
+      finalHotendTemp: { placeholder: 'S240', description: 'Final hotend temperature (°C)' },
+      layerHeight: { placeholder: 'Z0.28', description: 'Layer height (mm)' },
       retractionDistance: { placeholder: 'E-6', description: 'Retraction distance (mm)' },
-      retractionSpeed: { placeholder: 'F2400', description: 'Retraction speed (mm/min)' },
-      printSpeed: { placeholder: 'F3300', description: 'Print speed (mm/min)' },
-      travelSpeed: { placeholder: 'F11000', description: 'Travel speed (mm/min)' },
+      retractionSpeed: { placeholder: 'F2700', description: 'Retraction speed (mm/min)' },
+      printSpeed: { placeholder: 'F1500', description: 'Print speed (mm/min)' },
+      travelSpeed: { placeholder: 'F7500', description: 'Travel speed (mm/min)' },
       enableABL: { placeholder: ';G29', description: 'Enable auto bed leveling (G29)' },
       restoreABL: { placeholder: 'M420 S1', description: 'Restore ABL mesh' }
     },
     defaultValues: {
-      bedTemp: 80,
-      hotendTemp: 185,
-      finalHotendTemp: 235,
+      bedTemp: 50,
+      hotendTemp: 240,
+      finalHotendTemp: 240,
       layerHeight: 0.28,
       retractionDistance: 6,
-      retractionSpeed: 2400,
-      printSpeed: 3300,
-      travelSpeed: 11000,
+      retractionSpeed: 2700,
+      printSpeed: 1500,
+      travelSpeed: 7500,
       enableABL: false,
-      restoreABL: true
+      restoreABL: false
     }
   }
 }

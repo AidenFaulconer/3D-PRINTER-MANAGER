@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import usePrintersStore from './stores/printersStore'
+import { useActivePrinterId, useSetActivePrinter } from './hooks/useStoreSelectors'
 import storeRegistry from './stores/storeRegistry'
 import PrinterDashboard from './components/PrinterDashboard'
 import PrinterLayout from './components/PrinterLayout'
 import PrinterControlPage from './pages/PrinterControlPage'
+import CalibrationWorkflow from './components/CalibrationWorkflow'
 import { ThemeProvider } from './context/ThemeContext'
 
 // Simple router
@@ -28,7 +29,8 @@ const useRouter = () => {
 
 function App() {
   const { route, navigate } = useRouter()
-  const { activePrinterId, setActivePrinter } = usePrintersStore()
+  const activePrinterId = useActivePrinterId()
+  const setActivePrinter = useSetActivePrinter()
 
   // Initialize store registry for global access (Zukeeper extension)
   useEffect(() => {
@@ -60,6 +62,9 @@ function App() {
 
       case 'control':
         return <PrinterControlPage />
+
+      case 'calibration':
+        return <CalibrationWorkflow />
 
       default:
         return <PrinterDashboard onPrinterSelect={handlePrinterSelect} />

@@ -1,10 +1,10 @@
 import React, { useState, useMemo } from 'react'
-import useGcodeFilesStore from '../stores/gcodeFilesStore'
-import useAdvancedQueueStore from '../stores/advancedQueueStore'
+import { useGcodeFiles, useFolders, useFolderActions } from '../hooks/useStoreSelectors'
 
 const FileManager = () => {
-  const { gcodeFiles } = useGcodeFilesStore()
-  const { folders, addFolder, updateFolder, deleteFolder } = useAdvancedQueueStore()
+  const gcodeFiles = useGcodeFiles()
+  const folders = useFolders()
+  const { addFolder, updateFolder, deleteFolder } = useFolderActions()
   
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedFiles, setSelectedFiles] = useState(new Set())

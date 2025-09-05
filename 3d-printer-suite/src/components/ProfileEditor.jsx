@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react'
 import { X, Search, AlertTriangle, CheckCircle, Clock } from 'lucide-react'
-import usePrintersStore from '../stores/printersStore'
+import { useGetActivePrinter, useUpdateProfile } from '../hooks/useStoreSelectors'
 import { CURA_SETTINGS_SCHEMA, settingMeta } from '../utils/curaSchema'
 import { validateAndAnalyze } from '../utils/profileValidation'
 
@@ -15,7 +15,8 @@ const Toggle = ({ checked, onChange }) => (
 )
 
 const ProfileEditor = ({ isOpen, onClose, profile, onSave }) => {
-  const { getActivePrinter, updateProfile } = usePrintersStore()
+  const getActivePrinter = useGetActivePrinter()
+  const updateProfile = useUpdateProfile()
   const activePrinter = getActivePrinter()
 
   const [localSettings, setLocalSettings] = useState(profile?.settings || {})

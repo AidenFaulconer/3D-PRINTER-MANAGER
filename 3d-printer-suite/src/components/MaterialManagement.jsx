@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from 'react'
 import { Plus, Edit, Trash2, Upload, Download, Link2, CheckCircle } from 'lucide-react'
-import usePrintersStore from '../stores/printersStore'
+import { useGetActivePrinter, useMaterialActions, useProfileActions } from '../hooks/useStoreSelectors'
 import { MATERIAL_TEMPLATES, parseCuraMaterial } from '../utils/materialsDB'
 
 const MaterialManagement = () => {
-  const { getActivePrinter, addMaterial, updateMaterial, deleteMaterial, updateProfile, setProfileMaterial } = usePrintersStore()
+  const getActivePrinter = useGetActivePrinter()
+  const { addMaterial, updateMaterial, deleteMaterial } = useMaterialActions()
+  const { updateProfile, setProfileMaterial } = useProfileActions()
   const activePrinter = getActivePrinter()
 
   const [showCreate, setShowCreate] = useState(false)

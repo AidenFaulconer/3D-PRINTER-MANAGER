@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import useSerialStore from '../stores/serialStore'
 import SerialConnectionStatus from './SerialConnectionStatus'
 import MovementControl from './controls/MovementControl'
@@ -22,49 +22,64 @@ const PrinterControlPanel = React.memo(() => {
   const disconnect = useSerialStore(state => state.disconnect)
   const sendCommand = useSerialStore(state => state.sendCommand)
 
+  // Use a ref to track the last processed log count to avoid unnecessary updates
+  const lastLogCountRef = useRef(0)
   const [position, setPosition] = useState(null)
-
-  // Subscribe to all logs and filter with useMemo to prevent infinite re-renders
-  const allLogs = useSerialStore(state => state.serialLogs)
-  const positionLogs = useMemo(() => 
-    allLogs.filter(log => 
-      log.type === 'rx' && 
-      /\bX:\s*[-\d.]+/.test(log.message) && 
-      /\bY:\s*[-\d.]+/.test(log.message) && 
-      /\bZ:\s*[-\d.]+/.test(log.message)
-    ), [allLogs]
-  )
-
-  // Parse position updates only when position logs change
+  
+  // Only process position logs when we actually need to update position
+  // This prevents the memory leak and excessive re-renders
+  const processPositionLogs = useCallback(() => {
+    const allLogs = useSerialStore.getState().serialLogs || []
+    const currentLogCount = allLogs.length
+    
+    // Only process if there are new logs
+    if (currentLogCount <= lastLogCountRef.current) return
+    
+    // Find the latest position log
+    const positionLogs = allLogs
+      .slice(lastLogCountRef.current) // Only process new logs
+      .filter(log => 
+        log.type === 'rx' && 
+        /\bX:\s*[-\d.]+/.test(log.message) && 
+        /\bY:\s*[-\d.]+/.test(log.message) && 
+        /\bZ:\s*[-\d.]+/.test(log.message)
+      )
+    
+    if (positionLogs.length > 0) {
+      const latestLog = positionLogs[positionLogs.length - 1]
+      const line = latestLog.message
+      
+      const newPosition = {
+        x: parseFloat((line.match(/X:\s*([-\d.]+)/) || [])[1] || 0),
+        y: parseFloat((line.match(/Y:\s*([-\d.]+)/) || [])[1] || 0),
+        z: parseFloat((line.match(/Z:\s*([-\d.]+)/) || [])[1] || 0),
+        e: parseFloat((line.match(/E:\s*([-\d.]+)/) || [])[1] || 0)
+      }
+      
+      if (!Number.isNaN(newPosition.x)) {
+        setPosition(prev => {
+          if (!prev || prev.x !== newPosition.x || prev.y !== newPosition.y || prev.z !== newPosition.z || prev.e !== newPosition.e) {
+            return newPosition
+          }
+          return prev
+        })
+      }
+    }
+    
+    lastLogCountRef.current = currentLogCount
+  }, [])
+  
+  // Use a timer to periodically check for new position logs instead of subscribing to every log change
   useEffect(() => {
-    if (positionLogs.length === 0) return
-    
-    const latestPositionLog = positionLogs[positionLogs.length - 1]
-    const line = latestPositionLog.message
+    const interval = setInterval(processPositionLogs, 1000) // Check every second
+    return () => clearInterval(interval)
+  }, [processPositionLogs])
 
-    // Position: M114 typical: X:0.00 Y:0.00 Z:0.00 E:0.00
-    const newPosition = {
-      x: parseFloat((line.match(/X:\s*([-\d.]+)/) || [])[1] || 0),
-      y: parseFloat((line.match(/Y:\s*([-\d.]+)/) || [])[1] || 0),
-      z: parseFloat((line.match(/Z:\s*([-\d.]+)/) || [])[1] || 0),
-      e: parseFloat((line.match(/E:\s*([-\d.]+)/) || [])[1] || 0)
-    }
-    
-    // Only update if position actually changed
-    if (!Number.isNaN(newPosition.x)) {
-      setPosition(prev => {
-        if (!prev || prev.x !== newPosition.x || prev.y !== newPosition.y || prev.z !== newPosition.z || prev.e !== newPosition.e) {
-          return newPosition
-        }
-        return prev
-      })
-    }
-  }, [positionLogs])
 
   const requestPosition = () => sendCommand('M114')
-  const requestTemps = () => sendCommand('M105')
 
   const send = (g) => sendCommand(g)
+  
 
   const preheat = (mat) => {
     if (mat === 'PLA') { send('M104 S205'); send('M140 S60') }
@@ -86,7 +101,7 @@ const PrinterControlPanel = React.memo(() => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <MovementControl send={send} requestPosition={requestPosition} lastPosition={position} />
-        <TemperatureControl send={send} requestTemps={requestTemps} isConnected={status === 'connected'} />
+        <TemperatureControl send={send} isConnected={status === 'connected'} />
         <ExtrusionControl send={send} preheat={preheat} />
         <FanControl send={send} />
         <BabyStepControl send={send} isConnected={status === 'connected'} />
@@ -106,6 +121,10 @@ const PrinterControlPanel = React.memo(() => {
       </div>
     </div>
   )
+}, (prevProps, nextProps) => {
+  // Custom comparison function to prevent unnecessary re-renders
+  // Since this component has no props, it should only re-render when internal state changes
+  return true // Always return true to prevent re-renders based on props
 })
 
 export default PrinterControlPanel

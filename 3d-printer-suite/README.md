@@ -14,10 +14,31 @@ A comprehensive 3D printer calibration and management tool built with React, Vit
 ## Tech Stack
 
 - **Frontend**: React 18 with Vite
-- **State Management**: Zustand with persistence middleware
+- **State Management**: Zustand with persistence middleware and optimized selectors
 - **Styling**: Tailwind CSS
 - **Icons**: Lucide React
 - **Routing**: React Router DOM (configured for future use)
+
+## Performance Optimizations
+
+### Store Selector Hooks
+
+The application uses optimized Zustand selector hooks to prevent unnecessary re-renders. Instead of destructuring entire store state, components use specific selector hooks that only subscribe to the data they need.
+
+**Before (causes unnecessary re-renders):**
+```javascript
+const { printers, addPrinter, deletePrinter } = usePrintersStore()
+```
+
+**After (optimized):**
+```javascript
+const printers = usePrinters()
+const { addPrinter, deletePrinter } = usePrinterActions()
+```
+
+This ensures components only re-render when their specific data changes, significantly improving performance in large applications.
+
+See [`src/hooks/README.md`](src/hooks/README.md) for detailed documentation of all available selector hooks.
 
 ## Project Structure
 

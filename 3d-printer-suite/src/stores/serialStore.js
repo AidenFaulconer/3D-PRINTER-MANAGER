@@ -702,11 +702,8 @@ const useSerialStore = create(
                       
                       // Handle temperature updates - check for any temperature format
                       if (line.includes('T:') || line.includes('B:')) {
-                        console.log('SerialStore: Temperature line detected:', line)
                         const temps = parseTemperatures(line)
-                        console.log('SerialStore: Parsed temperatures result:', temps)
                         if (temps.hotend || temps.bed) {
-                          console.log('SerialStore: Updating store with temperatures:', temps)
                           set((state) => ({
                             temperatures: {
                               ...state.temperatures,
@@ -715,7 +712,6 @@ const useSerialStore = create(
                             }
                           }), false, 'updateTemperatures')
                         } else {
-                          console.log('SerialStore: No valid temperature data parsed from line:', line)
                         }
                       }
                       
@@ -1226,12 +1222,76 @@ const useSerialStore = create(
         }
       }
 
-      // Stream a full G-code program with optional ok-wait and progress callback
+      // Send multiple commands with proper busy handling
+      const sendCommandsWithWait = async (gcodeArray, options = {}) => {
+        const { delayMs = 100, waitForReady = true } = options
+        
+        for (const line of gcodeArray) {
+          if (!line || /^\s*(;|#)/.test(line)) continue
+          await sendCommandWithWait(line, { waitForReady })
+          if (delayMs) await new Promise((r) => setTimeout(r, delayMs))
+        }
+      }
+
+      // Wait for printer to be ready (not busy)
+      const waitForPrinterReady = async (timeoutMs = 10000) => {
+        const startTime = Date.now()
+        
+        while (Date.now() - startTime < timeoutMs) {
+          const state = get()
+          const recentLogs = state.serialLogs.slice(-10) // Check last 10 logs
+          
+          // Check if printer is busy
+          const isBusy = recentLogs.some(log => 
+            log.type === 'rx' && log.message.includes('echo:busy: processing')
+          )
+          
+          if (!isBusy) {
+            return true // Printer is ready
+          }
+          
+          // Wait a bit before checking again
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+        
+        return false // Timeout
+      }
+
+      // Send command and wait for printer to be ready
+      const sendCommandWithWait = async (gcode, options = {}) => {
+        const { waitForReady = true, maxRetries = 3, retryDelay = 1000 } = options
+        
+        if (!gcode || gcode.trim().length === 0) {
+          return
+        }
+
+        const state = get()
+        if (!state.port || !state.port.writable || state.status !== 'connected') {
+          appendSerialLog(`Cannot send command - not connected. Status: ${state.status}`, 'err')
+          return
+        }
+
+        // Wait for printer to be ready if requested
+        if (waitForReady) {
+          const isReady = await waitForPrinterReady()
+          if (!isReady) {
+            appendSerialLog('Printer busy timeout - command skipped', 'warn')
+            return
+          }
+        }
+
+        // Send the command
+        await sendCommand(gcode)
+        
+        // Wait a bit for the command to be processed
+        await new Promise(resolve => setTimeout(resolve, 100))
+      }
+
+      // Stream a full G-code program with proper busy handling
       const sendGcodeProgram = async (programText, options = {}) => {
         const {
-          delayMs = 60,
-          waitForOk = true,
-          okTimeoutMs = 5000,
+          delayMs = 100,
+          waitForReady = true,
           onProgress
         } = options
 
@@ -1286,7 +1346,8 @@ const useSerialStore = create(
         set({ isStreamingProgram: true }, false, 'startProgramStream')
         try {
           for (let i = 0; i < lines.length; i++) {
-            await sendCommand(lines[i])
+            // Use sendCommandWithWait to respect printer busy state
+            await sendCommandWithWait(lines[i], { waitForReady: waitForReady })
             if (delayMs) await new Promise(r => setTimeout(r, delayMs))
             try { 
               await awaitOk() 
@@ -1503,7 +1564,6 @@ const useSerialStore = create(
           timestamp: Date.now(),
           lastPoll: Date.now()
         },
-        temperatureHistory: [],
         
         // Bed mesh state
         bedMesh: {
@@ -1545,11 +1605,6 @@ const useSerialStore = create(
             }
           }), false, 'updateTemperatures'),
         
-        setTemperatureHistory: (history) => {
-          // Store temperature history without triggering any re-renders
-          // This is only for sharing data between components, not for reactive updates
-          set({ temperatureHistory: history }, false, 'setTemperatureHistory')
-        },
         setWriterLock: (lock) => set({ writerLock: lock }, false, 'setWriterLock'),
         setWriterPromise: (promise) => set({ writerPromise: promise }, false, 'setWriterPromise'),
         clearLogs: () => set({ serialLogs: [] }, false, 'clearLogs'),
@@ -1566,7 +1621,6 @@ const useSerialStore = create(
             bed: { current: 0, target: 0 },
             timestamp: Date.now()
           },
-          temperatureHistory: [],
           bedMesh: {
             data: [],
             gridSize: { x: 0, y: 0 },
@@ -1584,6 +1638,9 @@ const useSerialStore = create(
         disconnect,
         sendCommand,
         sendCommands,
+        sendCommandWithWait,
+        sendCommandsWithWait,
+        waitForPrinterReady,
         sendGcodeProgram,
         fetchBedLevel,
         runBedLeveling,

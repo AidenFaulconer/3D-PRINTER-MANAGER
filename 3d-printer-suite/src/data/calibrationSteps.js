@@ -9,8 +9,10 @@ export const calibrationSteps = [
   {
     id: 'pid-autotune',
     title: 'PID Autotune',
+    name: 'PID Autotune',
     description: 'Calibrate the PID values for your hotend and bed to achieve stable temperatures',
     category: 'Temperature',
+    requiresSave: true,
     videoUrl: 'https://www.youtube.com/watch?v=APzJfYAgFkQ',
     instructions: [
       'Preheat the hotend and bed to approximate target temperatures.',
@@ -90,8 +92,10 @@ export const calibrationSteps = [
   {
     id: 'extruder-esteps',
     title: 'Extruder E-Steps Calibration',
+    name: 'Extruder E-Steps Calibration',
     description: 'Calibrate the extruder steps per mm to ensure accurate filament extrusion',
     category: 'Movement',
+    requiresSave: true,
     videoUrl: 'https://www.youtube.com/watch?v=7tCxO17XZtw',
     instructions: [
       'Heat the hotend to printing temperature (e.g., 200°C).',
@@ -189,7 +193,9 @@ export const calibrationSteps = [
   {
     id: 'retraction-tuning',
     title: 'Retraction Tuning',
+    name: 'Retraction Tuning',
     description: 'Optimize retraction settings to eliminate stringing and oozing',
+    requiresSave: true,
     category: 'Quality',
     videoUrl: 'https://www.youtube.com/watch?v=Z2hZKx9F9_s',
     instructions: [
@@ -338,7 +344,9 @@ export const calibrationSteps = [
   {
     id: 'first-layer',
     title: 'First Layer Calibration',
+    name: 'First Layer Calibration',
     description: 'Calibrate the first layer height and bed leveling for perfect adhesion',
+    requiresSave: false,
     category: 'Quality',
     videoUrl: 'https://www.youtube.com/watch?v=Kj4x1P1R3sE',
     instructions: [
@@ -447,7 +455,9 @@ export const calibrationSteps = [
   {
     id: 'flow-rate',
     title: 'Flow Rate Calibration',
+    name: 'Flow Rate Calibration',
     description: 'Calibrate the flow rate to achieve accurate wall thickness and dimensions',
+    requiresSave: true,
     category: 'Quality',
     videoUrl: 'https://www.youtube.com/watch?v=3-p7u0qv2bM',
     instructions: [
@@ -503,38 +513,83 @@ export const calibrationSteps = [
         label: 'Print Test Cube',
         key: 'printTestCube',
         defaultValue: true
+      },
+      {
+        type: 'number',
+        label: 'Hotend Temperature (°C)',
+        key: 'hotendTemp',
+        defaultValue: 235,
+        min: 180,
+        max: 280,
+        step: 5,
+        required: true
+      },
+      {
+        type: 'number',
+        label: 'Bed Temperature (°C)',
+        key: 'bedTemp',
+        defaultValue: 80,
+        min: 0,
+        max: 120,
+        step: 5,
+        required: true
       }
     ],
-    gcode: (inputValues) => {
-      const { currentFlow, wallThickness, nozzleDiameter, printTestCube } = inputValues
-      let gcode = `; Flow Rate Calibration\n`
-      gcode += `; Current flow: ${currentFlow}%, Wall thickness: ${wallThickness}mm\n`
-      gcode += `; Nozzle: ${nozzleDiameter}mm\n`
+    gcode: async (inputValues) => {
+      const { currentFlow, wallThickness, nozzleDiameter, printTestCube, hotendTemp, bedTemp } = inputValues
       
-      gcode += `; Set flow rate\n`
-      gcode += `M221 S${currentFlow}\n`
-      gcode += `M500\n`
-      
-      if (printTestCube) {
-        gcode += `; Print 20x20x20mm test cube\n`
-        gcode += `; Measure wall thickness with calipers\n`
-        gcode += `; Calculate new flow rate:\n`
-        gcode += `; New Flow = (Expected thickness × Current flow) ÷ Actual thickness\n`
-        gcode += `; Use M221 S<value> to set new flow rate\n`
-        gcode += `; Use M500 to save`
-      } else {
-        gcode += `; Flow rate set to ${currentFlow}%\n`
-        gcode += `; Test with a simple print and measure dimensions`
+      // Convert input values to parameterized format
+      const parameters = {
+        bedTemp: bedTemp || 80,
+        hotendTemp: (hotendTemp || 235) - 50, // Initial temp (50°C below target)
+        finalHotendTemp: hotendTemp || 235,
+        layerHeight: 0.4, // Flow rate test typically uses 0.4mm layer height
+        retractionDistance: 3.2,
+        retractionSpeed: 2700,
+        printSpeed: 3300,
+        travelSpeed: 11000,
+        enableABL: false,
+        restoreABL: false
       }
       
-      return gcode
+      try {
+        const result = await generateParameterizedGcode('flow-rate', parameters)
+        
+        // Add flow rate setting and instructions at the beginning
+        let gcode = `; Flow Rate Calibration\n`
+        gcode += `; Current flow: ${currentFlow}%, Wall thickness: ${wallThickness}mm\n`
+        gcode += `; Nozzle: ${nozzleDiameter}mm\n`
+        gcode += `; Set flow rate\n`
+        gcode += `M221 S${currentFlow}\n`
+        gcode += `M500\n\n`
+        
+        if (printTestCube) {
+          gcode += `; Print flow rate test cube\n`
+          gcode += `; Measure wall thickness with calipers\n`
+          gcode += `; Calculate new flow rate:\n`
+          gcode += `; New Flow = (Expected thickness × Current flow) ÷ Actual thickness\n`
+          gcode += `; Use M221 S<value> to set new flow rate\n`
+          gcode += `; Use M500 to save\n\n`
+        }
+        
+        // Add the parameterized G-code
+        gcode += result.gcode
+        
+        return gcode
+      } catch (error) {
+        console.error('Error generating parameterized G-code:', error)
+        // Fallback to simple G-code
+        return `; Flow Rate Calibration\n; Current flow: ${currentFlow}%, Wall thickness: ${wallThickness}mm\n; Nozzle: ${nozzleDiameter}mm\n; Set flow rate\nM221 S${currentFlow}\nM500\n; Print test cube and measure wall thickness`
+      }
     }
   },
   
   {
     id: 'temperature-tower',
     title: 'Temperature Tower',
+    name: 'Temperature Tower',
     description: 'Find the optimal printing temperature for your filament',
+    requiresSave: false,
     category: 'Temperature',
     videoUrl: 'https://www.youtube.com/watch?v=0Y2YxYf-7xU',
     instructions: [
@@ -634,7 +689,9 @@ calibrationSteps.push(
   {
     id: 'calibration-cube',
     title: 'Calibration Cube',
+    name: 'Calibration Cube',
     description: 'Print a 20 mm calibration cube to verify dimensional accuracy and general print health',
+    requiresSave: false,
     category: 'Quality',
     videoUrl: 'https://www.youtube-nocookie.com/embed/2RPO4mDFN70',
     instructions: [
@@ -743,7 +800,9 @@ calibrationSteps.push(
   {
     id: 'speed-calibration',
     title: 'Speed Calibration',
+    name: 'Speed Calibration',
     description: 'Print progressive speed lines to find the fastest reliable print speed without artifacts',
+    requiresSave: false,
     category: 'Speed',
     videoUrl: 'https://www.youtube-nocookie.com/embed/U9B6hVZ7S9U',
     instructions: [
@@ -771,49 +830,44 @@ calibrationSteps.push(
       { type: 'number', label: 'Hotend Temp (°C)', key: 'hotendTemp', defaultValue: 210, min: 170, max: 280, step: 5, required: true },
       { type: 'number', label: 'Bed Temp (°C)', key: 'bedTemp', defaultValue: 60, min: 0, max: 120, step: 5, required: true }
     ],
-    gcode: (v) => {
-      const bed = (typeof window !== 'undefined' && window.__PRINTER_BED__) || { x: 220, y: 220 }
-      const start = Math.max(5, v.startSpeed || 40)
-      const end = Math.max(start + 5, v.endSpeed || 120)
-      const step = Math.max(1, v.stepSpeed || 10)
-      const length = Math.min(bed.x - 40, Math.max(60, v.lineLength || 160))
-      const hot = Math.max(0, v.hotendTemp || 210)
-      const bedT = Math.max(0, v.bedTemp || 60)
-
-      // Build speeds array
-      const speeds = []
-      for (let s = start; s <= end; s += step) speeds.push(Math.round(s))
-      if (speeds.length === 0) speeds.push(Math.round(start))
-
-      const margin = 20
-      const xStart = Math.max(margin, (bed.x - length) / 2).toFixed(2)
-      const xEnd = (parseFloat(xStart) + length).toFixed(2)
-      const yBase = Math.max(margin, bed.y * 0.2)
-
-      let g = ''
-      g += `; Speed Calibration Lines\nG90\nM82\nM106 S0\n`
-      g += `M140 S${bedT}\nM190 S${bedT}\n`
-      g += `M104 S${hot}\nM109 S${hot}\n`
-      g += `G28\nG1 Z0.28 F1200\nG92 E0\n`
-
-      // Prime
-      g += `G1 X${xStart} Y${(yBase - 10).toFixed(2)} F9000\nG1 E2 F1500\nG92 E0\n`
-
-      speeds.forEach((s, idx) => {
-        const F = Math.round(s * 60)
-        const y = (yBase + idx * 4).toFixed(2)
-        g += `; Speed ${s} mm/s\n`
-        // Forward line
-        g += `G1 X${xStart} Y${y} F9000\nG92 E0\n`
-        g += `G1 X${xEnd} Y${y} E${(length * 0.04).toFixed(3)} F${F}\n`
-        // Return line slightly above
-        const y2 = (parseFloat(y) + 1.2).toFixed(2)
-        g += `G1 X${xEnd} Y${y2} F9000\nG92 E0\n`
-        g += `G1 X${xStart} Y${y2} E${(length * 0.04).toFixed(3)} F${F}\n`
-      })
-
-      g += `M106 S0\nM104 S0\nM140 S0\nG1 Z5 F1200\nM84\n`
-      return g
+    gcode: async (inputValues) => {
+      const { startSpeed, endSpeed, stepSpeed, lineLength, hotendTemp, bedTemp } = inputValues
+      
+      // Convert input values to parameterized format
+      const parameters = {
+        bedTemp: bedTemp || 50,
+        hotendTemp: hotendTemp || 240,
+        finalHotendTemp: hotendTemp || 240,
+        layerHeight: 0.28,
+        retractionDistance: 6,
+        retractionSpeed: 2700,
+        printSpeed: 1500,
+        travelSpeed: 7500,
+        enableABL: false,
+        restoreABL: false
+      }
+      
+      try {
+        const result = await generateParameterizedGcode('speed-calibration', parameters)
+        
+        // Add speed calibration instructions at the beginning
+        let gcode = `; Speed Calibration\n`
+        gcode += `; Speed range: ${startSpeed || 40} to ${endSpeed || 120} mm/s (step: ${stepSpeed || 10} mm/s)\n`
+        gcode += `; Line length: ${lineLength || 160} mm\n`
+        gcode += `; Hotend: ${hotendTemp || 240}°C, Bed: ${bedTemp || 50}°C\n\n`
+        gcode += `; This test prints progressive speed lines to find maximum reliable speed\n`
+        gcode += `; Inspect for under-extrusion, ringing, or missed steps as speed increases\n`
+        gcode += `; Choose the highest speed with acceptable quality and no skipped steps\n\n`
+        
+        // Add the parameterized G-code
+        gcode += result.gcode
+        
+        return gcode
+      } catch (error) {
+        console.error('Error generating parameterized G-code:', error)
+        // Fallback to simple G-code
+        return `; Speed Calibration\n; Speed range: ${startSpeed || 40} to ${endSpeed || 120} mm/s\n; Line length: ${lineLength || 160} mm\n; Hotend: ${hotendTemp || 240}°C, Bed: ${bedTemp || 50}°C\n; Print speed test lines and inspect for quality issues`
+      }
     }
   }
 )

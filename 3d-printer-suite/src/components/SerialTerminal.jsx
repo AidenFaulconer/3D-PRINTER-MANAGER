@@ -17,8 +17,15 @@ const Line = ({ entry }) => {
 }
 
 const SerialTerminal = React.memo(({ onSend, onSendMany, onClear }) => {
-  // Subscribe to logs directly to minimize re-renders
-  const log = useSerialStore(state => state.serialLogs)
+  // Use selective subscription to prevent app-wide re-renders
+  const logCount = useSerialStore(state => state.serialLogs?.length || 0)
+  const [logs, setLogs] = useState([])
+  
+  useEffect(() => {
+    // Only fetch logs when log count changes
+    const allLogs = useSerialStore.getState().serialLogs || []
+    setLogs(allLogs)
+  }, [logCount])
   const fetchAllPrinterSettings = useSerialStore(state => state.fetchAllPrinterSettings)
   const serialStatus = useSerialStore(state => state.status)
   const [input, setInput] = useState('')
@@ -60,10 +67,10 @@ const SerialTerminal = React.memo(({ onSend, onSendMany, onClear }) => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [log])
+  }, [logs])
 
   const exportLog = () => {
-    const text = log.map(l => `${l.timestamp}\t${l.type}\t${l.message}`).join('\n')
+    const text = logs.map(l => `${l.timestamp}\t${l.type}\t${l.message}`).join('\n')
     const blob = new Blob([text], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -106,11 +113,11 @@ const SerialTerminal = React.memo(({ onSend, onSendMany, onClear }) => {
       </div>
 
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto bg-gray-900 border border-gray-300 rounded p-3 font-mono text-sm">
-        {log.length === 0 ? (
+        {logs.length === 0 ? (
           <div className="text-sm text-gray-500 text-center py-8">No messages yet. Connect to your printer to see serial communication.</div>
         ) : (
           <div className="space-y-1">
-            {log.map((entry, idx) => (
+            {logs.map((entry, idx) => (
               <Line key={idx} entry={entry} />
             ))}
           </div>

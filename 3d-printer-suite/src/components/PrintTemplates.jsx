@@ -1,17 +1,12 @@
 import React, { useState } from 'react'
-import useAdvancedQueueStore from '../stores/advancedQueueStore'
-import useGcodeFilesStore from '../stores/gcodeFilesStore'
+import { useTemplates, useTemplateActions, useGcodeFiles, useAdvancedQueueActions } from '../hooks/useStoreSelectors'
 
 const PrintTemplates = () => {
-  const {
-    templates,
-    addTemplate,
-    updateTemplate,
-    deleteTemplate,
-    addToQueue
-  } = useAdvancedQueueStore()
+  const templates = useTemplates()
+  const { addTemplate, updateTemplate, deleteTemplate } = useTemplateActions()
+  const { addToQueue } = useAdvancedQueueActions()
 
-  const { gcodeFiles } = useGcodeFilesStore()
+  const gcodeFiles = useGcodeFiles()
   const [showNewTemplateModal, setShowNewTemplateModal] = useState(false)
   const [selectedTemplate, setSelectedTemplate] = useState(null)
   const [templateForm, setTemplateForm] = useState({
