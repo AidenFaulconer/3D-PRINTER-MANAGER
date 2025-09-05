@@ -20,7 +20,7 @@ function useTemperatureData(isConnected, send) {
   const temperatureRef = useRef({ hotendCurrent: 0, hotendTarget: 0, bedCurrent: 0, bedTarget: 0 })
   const lastUpdateRef = useRef(0)
   const lastLogIndexRef = useRef(0)
-  // Note: no command sending from this component; serialStore manages M105 polling
+  const m105IntervalRef = useRef(null)
 
   // Local polling + immediate subscription to serial logs to update only this component
   useEffect(() => {
@@ -32,12 +32,34 @@ function useTemperatureData(isConnected, send) {
 
     const parseTemps = (line) => {
       const out = {}
+      
+      // Try multiple patterns for hotend temperature
       let m = line.match(/T:(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/)
       if (!m) m = line.match(/T:(\d+\.?\d*)\/(\d+\.?\d*)/)
-      if (m) out.hotend = { current: parseFloat(m[1]), target: parseFloat(m[2]) }
+      if (!m) m = line.match(/T:(\d+\.?\d*)\s*B:/)
+      if (!m) m = line.match(/T:(\d+\.?\d*)/)
+      if (!m) m = line.match(/T(\d+\.?\d*)/) // No colon
+      
+      if (m) {
+        out.hotend = { 
+          current: parseFloat(m[1]), 
+          target: m[2] ? parseFloat(m[2]) : 0 
+        }
+      }
+      
+      // Try multiple patterns for bed temperature
       let b = line.match(/B:(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/)
       if (!b) b = line.match(/B:(\d+\.?\d*)\/(\d+\.?\d*)/)
-      if (b) out.bed = { current: parseFloat(b[1]), target: parseFloat(b[2]) }
+      if (!b) b = line.match(/B:(\d+\.?\d*)/)
+      if (!b) b = line.match(/B(\d+\.?\d*)/) // No colon
+      
+      if (b) {
+        out.bed = { 
+          current: parseFloat(b[1]), 
+          target: b[2] ? parseFloat(b[2]) : 0 
+        }
+      }
+      
       return out
     }
 
@@ -65,9 +87,12 @@ function useTemperatureData(isConnected, send) {
       lastLogIndexRef.current = logs.length
 
       if (latestValues) {
+        console.log('TemperatureControl: Parsed temperatures from logs:', latestValues)
         temperatureRef.current = latestValues
         lastUpdateRef.current = Date.now()
         setTemperatureValues(latestValues)
+      } else {
+        console.log('TemperatureControl: No new temperature data found in logs')
       }
 
       // Do not send keep-alive here to avoid writer lock/contention; polling handled in serialStore
@@ -77,12 +102,14 @@ function useTemperatureData(isConnected, send) {
     const unsubscribeTemps = useSerialStore.subscribe(
       (state) => state.temperatures,
       (t) => {
+        console.log('TemperatureControl: Store temperatures changed:', t)
         const next = {
           hotendCurrent: t?.hotend?.current ?? temperatureRef.current.hotendCurrent,
           hotendTarget: t?.hotend?.target ?? temperatureRef.current.hotendTarget,
           bedCurrent: t?.bed?.current ?? temperatureRef.current.bedCurrent,
           bedTarget: t?.bed?.target ?? temperatureRef.current.bedTarget
         }
+        console.log('TemperatureControl: Store temperature next values:', next)
         temperatureRef.current = next
         lastUpdateRef.current = Date.now()
         setTemperatureValues(next)
@@ -99,16 +126,43 @@ function useTemperatureData(isConnected, send) {
       }
     )
 
+    // Start M105 polling for this component only
+    m105IntervalRef.current = setInterval(async () => {
+      const state = useSerialStore.getState()
+      if (state.status !== 'connected' || !state.port?.writable) return
+      
+      try {
+        // Send M105 directly without going through sendCommand to avoid writer lock issues
+        const writer = state.port.writable.getWriter()
+        const encoder = new TextEncoder()
+        const commandText = 'M105\r\n'
+        const data = encoder.encode(commandText)
+        
+        await writer.write(data)
+        writer.releaseLock()
+        
+        // Log the command
+        useSerialStore.getState().appendSerialLog('M105', 'tx')
+        console.log('TemperatureControl: Sent M105 command for temperature monitoring')
+      } catch (e) {
+        console.log('TemperatureControl: M105 send error:', e.message)
+      }
+    }, 2000) // Poll every 2 seconds
+
     // Also keep a periodic tick as a fallback
     const id = setInterval(tick, 750)
     return () => {
       clearInterval(id)
+      if (m105IntervalRef.current) {
+        clearInterval(m105IntervalRef.current)
+        m105IntervalRef.current = null
+      }
       unsubscribeTemps()
       unsubscribe()
     }
   }, [isConnected, send])
 
-  // No keep-alive sends here; serialStore handles M105 polling globally
+  // M105 polling is now handled by this component only
   
   return temperatureValues
 }
@@ -123,6 +177,7 @@ const TemperatureControl = React.memo(function TemperatureControl({ send, isConn
   const [targets, setTargets] = useState({ hotend: '', bed: '' })
   const canvasRef = useRef(null)
   const [history, setHistory] = useState([])
+  const [forceUpdate, setForceUpdate] = useState(0)
 
   // Nudge the hook to parse immediately when new logs arrive by briefly toggling a no-op read
   useEffect(() => {
@@ -131,12 +186,32 @@ const TemperatureControl = React.memo(function TemperatureControl({ send, isConn
     // No store writes or commands; purely local.
   }, [logCount])
 
+  // Force chart updates periodically when connected
+  useEffect(() => {
+    if (!isConnected) return
+    
+    const updateInterval = setInterval(() => {
+      setForceUpdate(prev => prev + 1)
+    }, 1000) // Update every second
+    
+    return () => clearInterval(updateInterval)
+  }, [isConnected])
+
   // (history updated in effect below using destructured values)
 
   // Update history only when connected and temperature values change
   useEffect(() => {
+    console.log('TemperatureControl: History update effect triggered', {
+      isConnected,
+      hotendCurrent,
+      bedCurrent,
+      hotendTarget,
+      bedTarget
+    })
+    
     // Only update history when connected
     if (!isConnected) {
+      console.log('TemperatureControl: Not connected, clearing history')
       // Clear history when disconnected
       setHistory([])
       return
@@ -150,25 +225,48 @@ const TemperatureControl = React.memo(function TemperatureControl({ send, isConn
         targetBed: bedTarget,
         timestamp: Date.now()
       }
+      console.log('TemperatureControl: Adding new point to history:', newPoint)
       // Keep last 60 points (2 minutes at 2s intervals)
       const newHistory = [...prev, newPoint]
-      if (newHistory.length > 60) {
-        return newHistory.slice(-60)
-      }
-      return newHistory
+      const finalHistory = newHistory.length > 60 ? newHistory.slice(-60) : newHistory
+      
+      // Also update the store so other components can access temperature history
+      useSerialStore.getState().setTemperatureHistory(finalHistory)
+      
+      return finalHistory
     })
+    
+    // Force chart update
+    setForceUpdate(prev => prev + 1)
   }, [isConnected, hotendCurrent, hotendTarget, bedCurrent, bedTarget])
 
   useEffect(() => {
-    console.log('TemperatureControl: Rendering chart with history length:', history.length)
+    console.log('TemperatureControl: Chart rendering effect triggered', { 
+      historyLength: history.length, 
+      forceUpdate, 
+      isConnected,
+      hotendCurrent,
+      bedCurrent 
+    })
+    
     const canvas = canvasRef.current
-    if (!canvas) return
+    if (!canvas) {
+      console.log('TemperatureControl: No canvas element found')
+      return
+    }
+    
     const ctx = canvas.getContext('2d')
     const w = canvas.width
     const h = canvas.height
     ctx.clearRect(0, 0, w, h)
     if (history.length === 0) {
-      console.log('TemperatureControl: No history data to render')
+      console.log('TemperatureControl: No history data, showing empty state')
+      // Draw a simple "No Data" message
+      ctx.fillStyle = '#666'
+      ctx.font = '16px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText('No temperature data', w/2, h/2)
+      ctx.fillText('Connect to printer to see live temperatures', w/2, h/2 + 20)
       return
     }
 
@@ -177,8 +275,11 @@ const TemperatureControl = React.memo(function TemperatureControl({ send, isConn
     const targetH = history.map(p => p.targetHotend || 0)
     const targetB = history.map(p => p.targetBed || 0)
     const all = [...valuesH, ...valuesB, ...targetH, ...targetB]
-    const min = Math.min(0, ...all)
-    const max = Math.max(Math.ceil((Math.max(...all) + 10) / 10) * 10, 100)
+    
+    // Fix scaling: min should be 0, max should be based on actual data
+    const dataMax = Math.max(0, ...all) // Ensure dataMax is at least 0
+    const min = 0
+    const max = Math.max(dataMax + 20, 100) // Add 20°C padding above max temperature, ensure min 100 range
 
     // Chart margins
     const margin = {
@@ -252,7 +353,7 @@ const TemperatureControl = React.memo(function TemperatureControl({ send, isConn
     // Draw actual temperatures (solid lines with points)
     drawLine(valuesH, '#ef4444') // red
     drawLine(valuesB, '#3b82f6') // blue
-  }, [history])
+  }, [history, forceUpdate])
 
   const setHotend = () => {
     if (!isConnected) return
@@ -281,10 +382,6 @@ const TemperatureControl = React.memo(function TemperatureControl({ send, isConn
     send('M106 S0')
   }
 
-  const hotend = hotendCurrent
-  const bed = bedCurrent
-  const targetHotend = hotendTarget
-  const targetBed = bedTarget
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-4">
@@ -319,11 +416,18 @@ const TemperatureControl = React.memo(function TemperatureControl({ send, isConn
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+              {/* Debug info */}
+        <div className="text-xs text-gray-500 mb-2">
+          <span>H: {hotendCurrent}°C / {hotendTarget}°C</span>
+          <span className="ml-4">B: {bedCurrent}°C / {bedTarget}°C</span>
+          <span className="ml-4">Points: {history.length}</span>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
         <div className="space-y-2">
           <div className="text-sm text-gray-600">
-            Hotend: <span className="font-medium text-gray-900">{hotend}°C</span>
-            {targetHotend > 0 && <span className="text-gray-500"> → {targetHotend}°C</span>}
+            Hotend: <span className="font-medium text-gray-900">{hotendCurrent}°C</span>
+            {hotendTarget > 0 && <span className="text-gray-500"> → {hotendTarget}°C</span>}
           </div>
           <div className="flex items-center space-x-2">
             <input 
@@ -352,8 +456,8 @@ const TemperatureControl = React.memo(function TemperatureControl({ send, isConn
         </div>
         <div className="space-y-2">
           <div className="text-sm text-gray-600">
-            Bed: <span className="font-medium text-gray-900">{bed}°C</span>
-            {targetBed > 0 && <span className="text-gray-500"> → {targetBed}°C</span>}
+            Bed: <span className="font-medium text-gray-900">{bedCurrent}°C</span>
+            {bedTarget > 0 && <span className="text-gray-500"> → {bedTarget}°C</span>}
           </div>
           <div className="flex items-center space-x-2">
             <input 

@@ -8,60 +8,12 @@ const useMonitorState = () => {
   const status = useSerialStore(state => state.status)
   const sendCommand = useSerialStore(state => state.sendCommand)
   
-  // Use polling to monitor temperatures when connected but prevent parent re-renders
-  const [temperatureValues, setTemperatureValues] = useState({
-    hotendCurrent: 0,
-    hotendTarget: 0,
-    bedCurrent: 0,
-    bedTarget: 0
-  })
-  
-  // Use a ref to store the latest temperatures without triggering re-renders
-  const temperatureRef = useRef({ hotendCurrent: 0, hotendTarget: 0, bedCurrent: 0, bedTarget: 0 })
-  
-  useEffect(() => {
-    if (status !== 'connected') {
-      setTemperatureValues({
-        hotendCurrent: 0,
-        hotendTarget: 0,
-        bedCurrent: 0,
-        bedTarget: 0
-      })
-      return
-    }
-    
-    // Subscribe to temperature changes using a completely isolated approach
-    // This subscription ONLY reads from store, NEVER writes to it
-    const unsubscribe = useSerialStore.subscribe(
-      (state) => state.temperatures,
-      (temperatures) => {
-        // Only update local state, never touch the store
-        if (temperatures) {
-          const newValues = {
-            hotendCurrent: temperatures.hotend?.current || 0,
-            hotendTarget: temperatures.hotend?.target || 0,
-            bedCurrent: temperatures.bed?.current || 0,
-            bedTarget: temperatures.bed?.target || 0
-          }
-          
-          // Only update if values actually changed to prevent unnecessary re-renders
-          if (
-            temperatureRef.current.hotendCurrent !== newValues.hotendCurrent ||
-            temperatureRef.current.hotendTarget !== newValues.hotendTarget ||
-            temperatureRef.current.bedCurrent !== newValues.bedCurrent ||
-            temperatureRef.current.bedTarget !== newValues.bedTarget
-          ) {
-            temperatureRef.current = newValues
-            setTemperatureValues(newValues)
-          }
-        }
-      }
-    )
-    
-    return unsubscribe
-  }, [status])
-  
-  const { hotendCurrent, hotendTarget, bedCurrent, bedTarget } = temperatureValues
+  // Get temperature data from store without subscribing to prevent re-renders
+  const temperatures = useSerialStore(state => state.temperatures)
+  const hotendCurrent = temperatures?.hotend?.current || 0
+  const hotendTarget = temperatures?.hotend?.target || 0
+  const bedCurrent = temperatures?.bed?.current || 0
+  const bedTarget = temperatures?.bed?.target || 0
   
   // Subscribe to all logs and filter with useMemo to prevent infinite re-renders
   const allLogs = useSerialStore(state => state.serialLogs)
@@ -90,25 +42,7 @@ const useMonitorState = () => {
   const [position, setPosition] = useState({ x: 0, y: 0, z: 0 })
   const [okCount, setOkCount] = useState(0)
   const [errCount, setErrCount] = useState(0)
-  const [series, setSeries] = useState([])
-
-  // Update temperature history when temperature values change
-  useEffect(() => {
-    setSeries(prev => {
-      const newPoint = {
-        hotend: hotendCurrent,
-        bed: bedCurrent,
-        targetHotend: hotendTarget,
-        targetBed: bedTarget,
-        timestamp: Date.now()
-      }
-      const newSeries = [...prev, newPoint]
-      if (newSeries.length > MAX_POINTS) {
-        return newSeries.slice(-MAX_POINTS)
-      }
-      return newSeries
-    })
-  }, [hotendCurrent, hotendTarget, bedCurrent, bedTarget])
+  
 
   // Update position only when position logs change
   useEffect(() => {
@@ -149,7 +83,6 @@ const useMonitorState = () => {
       hotend: { current: hotendCurrent, target: hotendTarget },
       bed: { current: bedCurrent, target: bedTarget }
     },
-    series,
     position,
     okCount,
     errCount,
@@ -179,7 +112,23 @@ const StatusDisplay = React.memo(({ temps, position, okCount, errCount }) => (
 ))
 
 const CalibrationMonitor = React.memo(() => {
-  const { temps, series, position, okCount, errCount } = useMonitorState()
+  const { temps, position, okCount, errCount } = useMonitorState()
+  
+  // Get temperature series from store without subscribing to prevent re-renders
+  const [series, setSeries] = useState([])
+  
+  useEffect(() => {
+    // Update series periodically without subscribing to store changes
+    const updateSeries = () => {
+      const history = useSerialStore.getState().temperatureHistory || []
+      setSeries(history)
+    }
+    
+    updateSeries() // Initial update
+    const interval = setInterval(updateSeries, 1000) // Update every second
+    
+    return () => clearInterval(interval)
+  }, [])
 
   return (
     <div className="bg-white border border-gray-200 rounded p-3 space-y-3">

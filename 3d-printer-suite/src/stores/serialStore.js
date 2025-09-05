@@ -610,7 +610,6 @@ const useSerialStore = create(
             current: parseFloat(tMatch[1]),
             target: parseFloat(tMatch[2])
           }
-          console.log('Temperature parsing: Matched hotend format 1:', tMatch)
         }
         
         // Format 2: T:25.0/0.0 (no spaces)
@@ -642,7 +641,6 @@ const useSerialStore = create(
             current: parseFloat(bMatch[1]),
             target: parseFloat(bMatch[2])
           }
-          console.log('Temperature parsing: Matched bed format 1:', bMatch)
         }
         
         // Format 2 for bed: B:25.0/0.0 (no spaces)
@@ -656,7 +654,6 @@ const useSerialStore = create(
           }
         }
         
-        console.log('Temperature parsing result for line:', line, '->', temps)
         return temps
       }
 
@@ -705,9 +702,11 @@ const useSerialStore = create(
                       
                       // Handle temperature updates - check for any temperature format
                       if (line.includes('T:') || line.includes('B:')) {
+                        console.log('SerialStore: Temperature line detected:', line)
                         const temps = parseTemperatures(line)
+                        console.log('SerialStore: Parsed temperatures result:', temps)
                         if (temps.hotend || temps.bed) {
-                          console.log('SerialStore: Parsed temperatures from line:', line, 'Result:', temps)
+                          console.log('SerialStore: Updating store with temperatures:', temps)
                           set((state) => ({
                             temperatures: {
                               ...state.temperatures,
@@ -716,7 +715,7 @@ const useSerialStore = create(
                             }
                           }), false, 'updateTemperatures')
                         } else {
-                          console.log('SerialStore: Temperature line detected but no valid temps parsed:', line)
+                          console.log('SerialStore: No valid temperature data parsed from line:', line)
                         }
                       }
                       
@@ -904,10 +903,7 @@ const useSerialStore = create(
           set({ port: null, status: 'disconnected', m503SentOnConnection: false }, false, 'disconnect')
           
           try {
-            if (tempMonitorRef) {
-              clearInterval(tempMonitorRef)
-              tempMonitorRef = null
-            }
+            // Temperature monitoring is handled by individual components
 
             if (readLoopAbortRef) {
               readLoopAbortRef.abort()
@@ -1054,42 +1050,8 @@ const useSerialStore = create(
             // Status is already set to 'connected' in tryOpenWithBaud
             appendSerialLog(`Connected @ ${openedBaud}`, 'sys')
 
-            // Start temperature monitoring
-            if (tempMonitorRef) {
-              clearInterval(tempMonitorRef)
-            }
-            // Start temperature monitoring (throttled, avoid overlaps)
-            tempMonitorRef = setInterval(async () => {
-              const st = get()
-              if (st.status !== 'connected' || !st.port?.writable) return
-              
-              try {
-                // Send M105 directly without going through sendCommand to avoid writer lock issues
-                const writer = st.port.writable.getWriter()
-                const encoder = new TextEncoder()
-                const commandText = 'M105\r\n'
-                const data = encoder.encode(commandText)
-                
-                await writer.write(data)
-                writer.releaseLock()
-                
-                // Log the command
-                appendSerialLog('M105', 'tx')
-                console.log('Temperature monitoring: Sent M105 command')
-                
-                set((state) => ({
-                  temperatures: {
-                    ...state.temperatures,
-                    lastPoll: Date.now()
-                  }
-                }), false, 'updateTempPollTime')
-              } catch (e) {
-                // Don't log errors during program streaming as they're expected
-                if (!st.isStreamingProgram) {
-                  appendSerialLog(`Temperature monitoring error: ${e.message}`, 'err')
-                }
-              }
-            }, 3000)
+            // Temperature monitoring is now handled by individual components
+            // No global polling to prevent app-wide re-renders
 
           } catch (e) {
             appendSerialLog(`Communication check failed: ${e.message}`, 'err')
@@ -1541,6 +1503,7 @@ const useSerialStore = create(
           timestamp: Date.now(),
           lastPoll: Date.now()
         },
+        temperatureHistory: [],
         
         // Bed mesh state
         bedMesh: {
@@ -1581,6 +1544,12 @@ const useSerialStore = create(
               timestamp: Date.now()
             }
           }), false, 'updateTemperatures'),
+        
+        setTemperatureHistory: (history) => {
+          // Store temperature history without triggering any re-renders
+          // This is only for sharing data between components, not for reactive updates
+          set({ temperatureHistory: history }, false, 'setTemperatureHistory')
+        },
         setWriterLock: (lock) => set({ writerLock: lock }, false, 'setWriterLock'),
         setWriterPromise: (promise) => set({ writerPromise: promise }, false, 'setWriterPromise'),
         clearLogs: () => set({ serialLogs: [] }, false, 'clearLogs'),
@@ -1597,6 +1566,7 @@ const useSerialStore = create(
             bed: { current: 0, target: 0 },
             timestamp: Date.now()
           },
+          temperatureHistory: [],
           bedMesh: {
             data: [],
             gridSize: { x: 0, y: 0 },
