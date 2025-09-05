@@ -1089,7 +1089,7 @@ const useSerialStore = create(
                   appendSerialLog(`Temperature monitoring error: ${e.message}`, 'err')
                 }
               }
-            }, 2000)
+            }, 3000)
 
           } catch (e) {
             appendSerialLog(`Communication check failed: ${e.message}`, 'err')

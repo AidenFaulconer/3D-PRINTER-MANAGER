@@ -3,6 +3,8 @@
  * Each step includes inputs, G-code generation, and completion tracking
  */
 
+import { generateParameterizedGcode, getStepParameters } from '../utils/GcodeParameterizer'
+
 export const calibrationSteps = [
   {
     id: 'pid-autotune',
@@ -295,7 +297,7 @@ export const calibrationSteps = [
         required: true
       }
     ],
-    gcode: (inputValues) => {
+    gcode: async (inputValues) => {
       const {
         startRetraction,
         endRetraction,
@@ -307,70 +309,29 @@ export const calibrationSteps = [
         hotendTemp,
         bedTemp
       } = inputValues
-
-      const feedRetract = Math.round(retractionSpeed * 60)
-      const towers = Math.max(2, Math.min(20, retractionSteps))
-      const start = Math.max(0, startRetraction)
-      const end = Math.max(0, endRetraction)
-      const step = towers > 1 ? (end - start) / (towers - 1) : 0
-
-      // Bed size if available
-      const bed = (typeof window !== 'undefined' && window.__PRINTER_BED__) || { x: 220, y: 220 }
-      const margin = 20
-      const baseY = Math.min(bed.y - margin, Math.max(margin, 40))
-      const spacing = Math.max(18, Math.min(40, (bed.x - margin * 2) / Math.max(2, towers - 1)))
-      const baseX = Math.max(margin, Math.min(bed.x - margin - spacing * (towers - 1), margin))
-
-      let gcode = ''
-      gcode += `; Retraction Tuning Towers (TeachingTech-style)\n+; Start S=${start.toFixed(2)}mm End S=${end.toFixed(2)}mm Steps=${towers} Speed=${retractionSpeed}mm/s\n`
-      gcode += `G90\nM82\nM106 S0\n`
-      gcode += `M140 S${bedTemp}\nM190 S${bedTemp}\n`
-      gcode += `M104 S${hotendTemp}\nM109 S${hotendTemp}\n`
-      gcode += `G28\nG1 Z5 F1200\n`
-      if (enableZHop) {
-        gcode += `M207 S${start.toFixed(2)} F${feedRetract} Z${zHop}\n`
-      } else {
-        gcode += `M207 S${start.toFixed(2)} F${feedRetract}\n`
+      
+      // Convert input values to parameterized format
+      const parameters = {
+        bedTemp: bedTemp,
+        hotendTemp: hotendTemp - 50, // Initial temp (50°C below target)
+        finalHotendTemp: hotendTemp,
+        layerHeight: 0.28,
+        retractionDistance: startRetraction,
+        retractionSpeed: retractionSpeed * 60, // Convert mm/s to mm/min
+        printSpeed: 3300,
+        travelSpeed: 11000,
+        enableABL: false,
+        restoreABL: true
       }
-      gcode += `G92 E0\n`
-
-      const travelF = 9000
-      const drawF = 1800
-      const zFirst = 0.28
-      const zHopF = 1200
-
-      // Prime
-      gcode += `G1 X${(margin).toFixed(2)} Y${(margin).toFixed(2)} F${travelF}\n`
-      gcode += `G1 Z${zFirst.toFixed(2)} F${zHopF}\nG1 E2 F1500\nG92 E0\n`
-      gcode += `G1 Y${Math.min(bed.y - margin, margin + 60).toFixed(2)} E6 F${drawF}\nG92 E0\n`
-
-      // Create towers left->right, each with a different S
-      for (let i = 0; i < towers; i++) {
-        const x = baseX + i * spacing
-        const S = (start + step * i)
-        gcode += `\n; Tower ${i + 1} — Retraction S=${S.toFixed(2)}mm\n`
-        gcode += `M207 S${S.toFixed(2)} F${feedRetract}${enableZHop ? ` Z${zHop}` : ''}\n`
-        // Simple two-post path between two close points to force retractions
-        const dx = 6
-        const y0 = baseY
-        const y1 = baseY + Math.max(20, testDistance)
-        gcode += `G1 Z${zFirst.toFixed(2)} F${zHopF}\n`
-        gcode += `G1 X${x.toFixed(2)} Y${y0.toFixed(2)} F${travelF}\nG92 E0\n`
-        for (let r = 0; r < 8; r++) {
-          const yA = y0 + r * ((y1 - y0) / 8)
-          const yB = yA + ((y1 - y0) / 8)
-          gcode += `G1 X${(x + dx).toFixed(2)} Y${yA.toFixed(2)} F${travelF}\n`
-          gcode += `G1 X${(x + dx).toFixed(2)} Y${yB.toFixed(2)} E0.8 F${drawF}\n`
-          gcode += `G1 X${x.toFixed(2)} Y${yB.toFixed(2)} F${travelF}\n`
-        }
-        // small wipe and retract sequence
-        gcode += `G1 E-0.4 F${feedRetract}\nG1 X${(x + dx + 2).toFixed(2)} F${travelF}\nG92 E0\n`
+      
+      try {
+        const result = await generateParameterizedGcode('retraction-tuning', parameters)
+        return result.gcode
+      } catch (error) {
+        console.error('Error generating parameterized G-code:', error)
+        // Fallback to simple G-code
+        return `; Retraction Tuning\nG90\nM82\nM140 S${bedTemp}\nM190 S${bedTemp}\nM104 S${hotendTemp}\nM109 S${hotendTemp}\nG28\nG0 Z3\n; Add your retraction test pattern here`
       }
-
-      // Restore and cool down
-      gcode += `\nM106 S0\nM104 S0\nM140 S0\nG1 Z10 F${zHopF}\nM84\n`
-
-      return gcode
     }
   },
   
@@ -455,85 +416,31 @@ export const calibrationSteps = [
         defaultValue: true
       }
     ],
-    gcode: (inputValues) => {
+    gcode: async (inputValues) => {
       const { layerHeight, firstLayerHeight, bedTemp, hotendTemp, printSpeed, enableBedLeveling } = inputValues
-      const primingRetract = 6
-      const travelF = 11000
-      const zHopF = 1200
-      const perimF = Math.max(1200, Math.round((printSpeed * 60)))
-
-      // Determine bed size (fallback 220x220); allow app to set window.__PRINTER_BED__ = { x, y }
-      const bed = (typeof window !== 'undefined' && window.__PRINTER_BED__) || { x: 220, y: 220 }
-      const margin = 10
-      const minX = margin
-      const minY = margin
-      const maxX = Math.max(margin + 40, bed.x - margin)
-      const maxY = Math.max(margin + 40, bed.y - margin)
-      const spanX = Math.max(40, maxX - minX)
-      const spanY = Math.max(40, maxY - minY)
-      const stepX = spanX / 3
-      const stepY = spanY / 3
-
-      const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi)
-
-      const pos = [
-        // 2x2 grid near corners within margins
-        { x: clamp(minX + stepX * 0.5, margin, bed.x - margin), y: clamp(minY + stepY * 0.5, margin, bed.y - margin) },
-        { x: clamp(minX + stepX * 0.5, margin, bed.x - margin), y: clamp(minY + stepY * 2.5, margin, bed.y - margin) },
-        { x: clamp(minX + stepX * 2.5, margin, bed.x - margin), y: clamp(minY + stepY * 1.5, margin, bed.y - margin) },
-        { x: clamp(minX + stepX * 1.5, margin, bed.x - margin), y: clamp(minY + stepY * 0.5, margin, bed.y - margin) }
-      ]
-
-      let gcode = ''
-      gcode += `; First Layer Calibration (auto-sized)\n`
-      gcode += `; Bed ${bed.x}x${bed.y} | Layer: ${layerHeight} | First: ${firstLayerHeight} | Bed ${bedTemp}°C | Hotend ${hotendTemp}°C | Speed ${printSpeed}mm/s\n`
-      gcode += `G90\nM82\nM106 S0\n`
-      gcode += `M140 S${bedTemp}\nM190 S${bedTemp}\n`
-      gcode += `M104 S${Math.max(0, hotendTemp - 50)} T0\n`
-      gcode += `G28 ; home all axes\n`
-      if (enableBedLeveling) {
-        gcode += `M420 S1 ; restore ABL mesh\n`
-      } else {
-        gcode += `M420 S0\n`
+      
+      // Convert input values to parameterized format
+      const parameters = {
+        bedTemp: bedTemp,
+        hotendTemp: hotendTemp - 50, // Initial temp (50°C below target)
+        finalHotendTemp: hotendTemp,
+        layerHeight: firstLayerHeight,
+        retractionDistance: 6,
+        retractionSpeed: 2400,
+        printSpeed: printSpeed * 60, // Convert mm/s to mm/min
+        travelSpeed: 11000,
+        enableABL: enableBedLeveling,
+        restoreABL: enableBedLeveling
       }
-      gcode += `M109 S${hotendTemp} T0\n`
-      gcode += `G0 Z3 F${zHopF}\n`
-
-      // Prime line along left edge within margins
-      const primeX = clamp(minX, margin, bed.x - margin)
-      const primeY0 = clamp(minY, margin, bed.y - margin)
-      const primeY1 = clamp(minY + Math.min(60, spanY * 0.6), margin, bed.y - margin)
-      gcode += `G92 E0\nG1 X${primeX.toFixed(2)} Y${primeY0.toFixed(2)} F${travelF}\n`
-      gcode += `G1 Z${firstLayerHeight.toFixed(3)} F${zHopF}\n`
-      gcode += `G1 E2 F1200\nG92 E0\n`
-      gcode += `G1 Y${primeY1.toFixed(2)} E6 F${perimF}\n`
-      gcode += `G1 E${(6 - primingRetract).toFixed(2)} F2400\nG92 E0\n`
-
-      const square = (cx, cy, size) => {
-        const half = size / 2
-        const x0 = clamp(cx - half, margin, bed.x - margin)
-        const y0 = clamp(cy - half, margin, bed.y - margin)
-        const x1 = clamp(cx + half, margin, bed.x - margin)
-        const y1 = clamp(cy + half, margin, bed.y - margin)
-        let s = ''
-        s += `; square at ${cx.toFixed(2)},${cy.toFixed(2)} size ${size.toFixed(2)}\n`
-        s += `G92 E0\nG1 E-${primingRetract} F2400\n`
-        s += `G1 Z${firstLayerHeight.toFixed(3)} F${zHopF}\n`
-        s += `G1 X${x0.toFixed(2)} Y${y0.toFixed(2)} F${travelF}\n`
-        s += `G1 E0 F2400\nG92 E0\n`
-        s += `G1 X${x1.toFixed(2)} Y${y0.toFixed(2)} E0.8 F${perimF}\n`
-        s += `G1 X${x1.toFixed(2)} Y${y1.toFixed(2)} E1.6\n`
-        s += `G1 X${x0.toFixed(2)} Y${y1.toFixed(2)} E2.4\n`
-        s += `G1 X${x0.toFixed(2)} Y${y0.toFixed(2)} E3.2\n`
-        s += `G1 E-${primingRetract} F2400\n`
-        return s
+      
+      try {
+        const result = await generateParameterizedGcode('first-layer', parameters)
+        return result.gcode
+      } catch (error) {
+        console.error('Error generating parameterized G-code:', error)
+        // Fallback to simple G-code
+        return `; First Layer Calibration\nG90\nM82\nM140 S${bedTemp}\nM190 S${bedTemp}\nM104 S${hotendTemp}\nG28\nM109 S${hotendTemp}\nG0 Z3\n; Add your first layer test pattern here`
       }
-
-      const sqSize = Math.min(spanX, spanY) / 3
-      pos.forEach(p => { gcode += square(p.x, p.y, sqSize) })
-
-      gcode += `G28 X0\nM106 S0\nM104 S0\nM140 S0\nM84\n`
-      return gcode
     }
   },
   
@@ -693,99 +600,31 @@ export const calibrationSteps = [
         defaultValue: true
       }
     ],
-    gcode: (inputValues) => {
+    gcode: async (inputValues) => {
       const { startTemp, endTemp, tempStep, bedTemp, includeBed } = inputValues
-
-      // Geometry and motion defaults (kept simple and robust)
-      const layerHeight = 0.28
-      const segmentLayers = 20 // ~5.6 mm per segment at 0.28 mm layers
-      const travelF = 9000
-      const perimF = 1800
-      const primeF = 1500
-      const retractF = 2400
-      const zF = 1200
-      const towerSize = 40 // mm square
-      const wallExtrusionPerSide = 0.8 // approx extrusion per 40 mm side with 0.4 nozzle
-
-      // Bed bounds (if provided by app)
-      const bed = (typeof window !== 'undefined' && window.__PRINTER_BED__) || { x: 220, y: 220 }
-      const margin = 20
-      const centerX = Math.max(margin + towerSize / 2, Math.min(bed.x - margin - towerSize / 2, bed.x / 2))
-      const centerY = Math.max(margin + towerSize / 2, Math.min(bed.y - margin - towerSize / 2, bed.y / 2))
-      const x0 = (centerX - towerSize / 2).toFixed(3)
-      const x1 = (centerX + towerSize / 2).toFixed(3)
-      const y0 = (centerY - towerSize / 2).toFixed(3)
-      const y1 = (centerY + towerSize / 2).toFixed(3)
-
-      // Temperature sequence
-      const dir = startTemp <= endTemp ? 1 : -1
-      const stepAbs = Math.max(1, Math.abs(tempStep))
-      const temps = []
-      for (let t = startTemp; dir > 0 ? t <= endTemp : t >= endTemp; t += dir * stepAbs) {
-        temps.push(Math.round(t))
+      
+      // Convert input values to parameterized format
+      const parameters = {
+        bedTemp: includeBed ? bedTemp : 0,
+        hotendTemp: startTemp - 50, // Initial temp (50°C below start)
+        finalHotendTemp: startTemp,
+        layerHeight: 0.28,
+        retractionDistance: 6,
+        retractionSpeed: 2400,
+        printSpeed: 3300,
+        travelSpeed: 11000,
+        enableABL: true,
+        restoreABL: false
       }
-      if (temps.length === 0) temps.push(Math.round(startTemp))
-
-      let gcode = ''
-      gcode += `; Temperature Tower — auto-generated\n`
-      gcode += `; Range: ${startTemp} -> ${endTemp} (step ${dir * stepAbs}) | Layer ${layerHeight} | Segment layers ${segmentLayers}\n`
-      gcode += `G90\nM82\nM106 S0\n`
-      if (includeBed) {
-        gcode += `M140 S${bedTemp}\nM190 S${bedTemp}\n`
+      
+      try {
+        const result = await generateParameterizedGcode('temperature-tower', parameters)
+        return result.gcode
+      } catch (error) {
+        console.error('Error generating parameterized G-code:', error)
+        // Fallback to simple G-code
+        return `; Temperature Tower\nG90\nM82\nM140 S${bedTemp}\nM190 S${bedTemp}\nM104 S${startTemp}\nG28\nM109 S${startTemp}\nG0 Z3\n; Add your temperature tower pattern here`
       }
-      // Preheat near starting temp, home, then set exact start
-      gcode += `M104 S${Math.max(0, temps[0] - 50)}\n`
-      gcode += `G28 ; home all axes\n`
-      gcode += `M109 S${temps[0]}\n`
-      gcode += `G92 E0\nG1 Z3 F${zF}\n`
-
-      // Prime line at left margin
-      const primeY0 = Math.max(margin, Math.min(bed.y - margin, centerY - 30)).toFixed(2)
-      const primeY1 = Math.max(margin, Math.min(bed.y - margin, centerY + 30)).toFixed(2)
-      const primeX = Math.max(margin, Math.min(bed.x - margin, centerX - towerSize)).toFixed(2)
-      gcode += `G1 X${primeX} Y${primeY0} F${travelF}\n`
-      gcode += `G1 Z${layerHeight.toFixed(2)} F${zF}\n`
-      gcode += `G1 E2 F${primeF}\nG92 E0\n`
-      gcode += `G1 Y${primeY1} E6 F${perimF}\nG92 E0\n`
-
-      // Move to tower start
-      gcode += `G1 X${x0} Y${y0} F${travelF}\n`
-
-      let currentZ = layerHeight
-      let currentTempIndex = 0
-      const totalLayers = temps.length * segmentLayers
-      for (let layer = 0; layer < totalLayers; layer++) {
-        // Temperature change at the start of each segment
-        if (layer % segmentLayers === 0) {
-          currentTempIndex = Math.floor(layer / segmentLayers)
-          const t = temps[currentTempIndex]
-          gcode += `\n; ===== Segment ${currentTempIndex + 1}/${temps.length} — ${t}°C =====\n`
-          // Blocking wait to reach new temp for top-of-segment clarity
-          gcode += `M109 S${t}\n`
-        }
-
-        // Set Z for this layer
-        gcode += `G1 Z${currentZ.toFixed(3)} F${zF}\n`
-
-        // Single-outline perimeter square
-        gcode += `G92 E0\n`
-        gcode += `G1 X${x1} Y${y0} E${wallExtrusionPerSide.toFixed(3)} F${perimF}\n`
-        gcode += `G1 X${x1} Y${y1} E${(wallExtrusionPerSide * 2).toFixed(3)}\n`
-        gcode += `G1 X${x0} Y${y1} E${(wallExtrusionPerSide * 3).toFixed(3)}\n`
-        gcode += `G1 X${x0} Y${y0} E${(wallExtrusionPerSide * 4).toFixed(3)}\n`
-        gcode += `G1 E-0.6 F${retractF}\n`
-
-        // Small Z hop travel to decorrelate seams
-        gcode += `G1 Z${(currentZ + 0.2).toFixed(3)} F${zF}\n`
-        gcode += `G1 X${x0} Y${y0} F${travelF}\n`
-        gcode += `G1 Z${(currentZ + layerHeight).toFixed(3)} F${zF}\n`
-
-        currentZ += layerHeight
-      }
-
-      // Finish and cool
-      gcode += `\nM106 S0\nM104 S0\nM140 S0\nG1 Z${(currentZ + 5).toFixed(2)} F${zF}\nM84\n`
-      return gcode
     }
   }
 ]

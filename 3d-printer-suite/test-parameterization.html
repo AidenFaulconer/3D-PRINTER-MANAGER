@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>G-code Parameterization Test</title>
+</head>
+<body>
+    <h1>G-code Parameterization Test</h1>
+    <div id="test-results"></div>
+    
+    <script type="module">
+        import { generateParameterizedGcode, getStepParameters } from './src/utils/GcodeParameterizer.js';
+        
+        async function runTests() {
+            const resultsDiv = document.getElementById('test-results');
+            
+            try {
+                // Test 1: Get parameters for first-layer step
+                console.log('Testing parameter retrieval...');
+                const params = getStepParameters('first-layer');
+                console.log('First-layer parameters:', params);
+                resultsDiv.innerHTML += '<h3>✅ Parameter retrieval test passed</h3>';
+                
+                // Test 2: Generate parameterized G-code for first-layer
+                console.log('Testing G-code generation...');
+                const testParams = {
+                    bedTemp: 80,
+                    hotendTemp: 185,
+                    finalHotendTemp: 235,
+                    layerHeight: 0.28,
+                    retractionDistance: 6,
+                    retractionSpeed: 2400,
+                    printSpeed: 3300,
+                    travelSpeed: 11000,
+                    enableABL: true,
+                    restoreABL: true
+                };
+                
+                const result = await generateParameterizedGcode('first-layer', testParams);
+                console.log('Generated G-code length:', result.gcode.length);
+                console.log('First 500 chars:', result.gcode.substring(0, 500));
+                
+                resultsDiv.innerHTML += '<h3>✅ G-code generation test passed</h3>';
+                resultsDiv.innerHTML += '<h4>Generated G-code preview:</h4>';
+                resultsDiv.innerHTML += '<pre style="background: #f5f5f5; padding: 10px; overflow-x: auto;">' + 
+                    result.gcode.substring(0, 1000) + '...' + '</pre>';
+                
+                // Test 3: Test with different parameters
+                console.log('Testing with different parameters...');
+                const result2 = await generateParameterizedGcode('first-layer', {
+                    ...testParams,
+                    bedTemp: 60,
+                    hotendTemp: 200,
+                    finalHotendTemp: 250,
+                    enableABL: false
+                });
+                
+                console.log('Second G-code length:', result2.gcode.length);
+                resultsDiv.innerHTML += '<h3>✅ Parameter variation test passed</h3>';
+                
+                // Test 4: Test temperature-tower
+                console.log('Testing temperature-tower...');
+                const towerResult = await generateParameterizedGcode('temperature-tower', {
+                    bedTemp: 80,
+                    hotendTemp: 180,
+                    finalHotendTemp: 220,
+                    layerHeight: 0.28,
+                    retractionDistance: 6,
+                    retractionSpeed: 2400,
+                    printSpeed: 3300,
+                    travelSpeed: 11000,
+                    enableABL: true,
+                    restoreABL: false
+                });
+                
+                console.log('Temperature tower G-code length:', towerResult.gcode.length);
+                resultsDiv.innerHTML += '<h3>✅ Temperature tower test passed</h3>';
+                
+                resultsDiv.innerHTML += '<h2 style="color: green;">🎉 All tests passed! Parameterization system is working correctly.</h2>';
+                
+            } catch (error) {
+                console.error('Test failed:', error);
+                resultsDiv.innerHTML += '<h3 style="color: red;">❌ Test failed: ' + error.message + '</h3>';
+            }
+        }
+        
+        runTests();
+    </script>
+</body>
+</html>

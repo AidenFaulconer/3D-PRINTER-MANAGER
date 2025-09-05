@@ -15,7 +15,11 @@ export default defineConfig({
     }
   },
   resolve: {
-    dedupe: ['three', '@react-three/fiber', '@react-three/drei']
+    dedupe: ['three', '@react-three/fiber', '@react-three/drei'],
+    alias: {
+      'react': 'react',
+      'react-dom': 'react-dom'
+    }
   },
   optimizeDeps: {
     include: [
@@ -34,6 +38,7 @@ export default defineConfig({
       include: [/three/, /drei/, /fiber/]
     },
     rollupOptions: {
+      external: [],
       output: {
         manualChunks: {
           three: ['three'],
@@ -41,6 +46,9 @@ export default defineConfig({
         }
       }
     }
+  },
+  define: {
+    'process.env.NODE_ENV': '"production"'
   },
   server: {
     watch: {

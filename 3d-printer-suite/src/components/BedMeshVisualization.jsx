@@ -18,7 +18,7 @@ import usePrintersStore from '../stores/printersStore'
 // 2D Canvas Visualization Component
 const BedMesh2D = ({ meshData, colorScheme, showValues, showGrid }) => {
   const canvasRef = useRef(null)
-  const [dimensions, setDimensions] = useState({ width: 400, height: 300 })
+  const [dimensions, setDimensions] = useState({ width: 600, height: 400 })
 
   const processedData = useMemo(() => {
     if (!meshData || !meshData.mesh || meshData.mesh.length === 0) {
@@ -134,7 +134,7 @@ const BedMesh2D = ({ meshData, colorScheme, showValues, showGrid }) => {
 
   if (!processedData) {
     return (
-      <div className="w-full h-64 bg-gray-100 rounded flex items-center justify-center">
+      <div className="w-full h-[400px] bg-gray-100 rounded flex items-center justify-center">
         <div className="text-center text-gray-500">
           <Grid className="w-12 h-12 mx-auto mb-2" />
           <p>No bed mesh data available</p>
@@ -231,7 +231,7 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
 
   if (!geometry) {
     return (
-      <div className="w-full h-64 bg-gray-100 rounded flex items-center justify-center">
+      <div className="w-full h-[500px] bg-gray-100 rounded flex items-center justify-center">
         <div className="text-center text-gray-500">
           <Grid className="w-12 h-12 mx-auto mb-2" />
           <p>No bed mesh data available</p>
@@ -258,7 +258,7 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
           <div>Scale: 1 unit = 1mm (Z ×{scaleFactor} for visibility)</div>
         </div>
       </div>
-      <div className="h-96 border border-gray-300 rounded relative">
+      <div className="h-[500px] border border-gray-300 rounded relative">
         <Canvas camera={{ position: [6, 6, 10], fov: 50 }}>
           <ambientLight intensity={0.6} />
           <directionalLight position={[5, 5, 5]} intensity={0.8} />
@@ -473,7 +473,7 @@ const BedMeshVisualization = ({ showStatus = true, showActions = true }) => {
   } : null
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header with controls */}
       <div className="flex flex-wrap justify-between items-center gap-4">
         <div>
@@ -550,8 +550,9 @@ const BedMeshVisualization = ({ showStatus = true, showActions = true }) => {
         </div>
       )}
 
-      {/* View mode toggle */}
-      <div className="flex items-center space-x-4">
+      {/* View mode toggle and visualization options */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        {/* View mode toggle */}
         <div className="flex bg-gray-100 rounded-lg p-1">
           <button
             onClick={() => setViewMode('2d')}
@@ -576,88 +577,84 @@ const BedMeshVisualization = ({ showStatus = true, showActions = true }) => {
             3D View
           </button>
         </div>
-      </div>
 
-      {/* Visualization controls */}
-      <div className="bg-gray-50 rounded-lg p-4">
-        <h4 className="font-medium mb-3">Visualization Options</h4>
-        
-        {viewMode === '2d' ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Color Scheme
-              </label>
-              <select
-                value={colorScheme}
-                onChange={(e) => setColorScheme(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
-              >
-                <option value="heatmap">Heatmap</option>
-                <option value="grayscale">Grayscale</option>
-                <option value="rainbow">Rainbow</option>
-              </select>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="showValues"
-                checked={showValues}
-                onChange={(e) => setShowValues(e.target.checked)}
-                className="rounded"
-              />
-              <label htmlFor="showValues" className="text-sm text-gray-700">
-                Show Values
-              </label>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="showGrid"
-                checked={showGrid}
-                onChange={(e) => setShowGrid(e.target.checked)}
-                className="rounded"
-              />
-              <label htmlFor="showGrid" className="text-sm text-gray-700">
-                Show Grid
-              </label>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="showWireframe"
-                checked={showWireframe}
-                onChange={(e) => setShowWireframe(e.target.checked)}
-                className="rounded"
-              />
-              <label htmlFor="showWireframe" className="text-sm text-gray-700">
-                Show Wireframe
-              </label>
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="showPoints"
-                checked={showPoints}
-                onChange={(e) => setShowPoints(e.target.checked)}
-                className="rounded"
-              />
-              <label htmlFor="showPoints" className="text-sm text-gray-700">
-                Show Points
-              </label>
-            </div>
-          </div>
-        )}
+        {/* Visualization options - inline with view toggle */}
+        <div className="flex items-center space-x-6">
+          {viewMode === '2d' ? (
+            <>
+              <div className="flex items-center space-x-2">
+                <label className="text-sm font-medium text-gray-700">Color:</label>
+                <select
+                  value={colorScheme}
+                  onChange={(e) => setColorScheme(e.target.value)}
+                  className="px-2 py-1 border border-gray-300 rounded text-sm"
+                >
+                  <option value="heatmap">Heatmap</option>
+                  <option value="grayscale">Grayscale</option>
+                  <option value="rainbow">Rainbow</option>
+                </select>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="showValues"
+                  checked={showValues}
+                  onChange={(e) => setShowValues(e.target.checked)}
+                  className="rounded"
+                />
+                <label htmlFor="showValues" className="text-sm text-gray-700">
+                  Show Values
+                </label>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="showGrid"
+                  checked={showGrid}
+                  onChange={(e) => setShowGrid(e.target.checked)}
+                  className="rounded"
+                />
+                <label htmlFor="showGrid" className="text-sm text-gray-700">
+                  Show Grid
+                </label>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="showWireframe"
+                  checked={showWireframe}
+                  onChange={(e) => setShowWireframe(e.target.checked)}
+                  className="rounded"
+                />
+                <label htmlFor="showWireframe" className="text-sm text-gray-700">
+                  Show Wireframe
+                </label>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="showPoints"
+                  checked={showPoints}
+                  onChange={(e) => setShowPoints(e.target.checked)}
+                  className="rounded"
+                />
+                <label htmlFor="showPoints" className="text-sm text-gray-700">
+                  Show Points
+                </label>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Visualization */}
-      <div className="bg-white rounded-lg border border-gray-200 p-6">
+      <div className="bg-white rounded-lg border border-gray-200 p-3">
         {viewMode === '2d' ? (
           <BedMesh2D 
             meshData={meshData}
@@ -676,24 +673,23 @@ const BedMeshVisualization = ({ showStatus = true, showActions = true }) => {
 
       {/* Mesh statistics */}
       {meshData && (
-        <div className="bg-gray-50 rounded-lg p-4">
-          <h4 className="font-medium mb-3">Mesh Statistics</h4>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div className="bg-gray-50 rounded-lg p-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
             <div>
-              <span className="text-gray-600">Min Height:</span>
-              <div className="font-mono">{meshData.min.toFixed(3)}mm</div>
+              <span className="text-gray-600 text-xs">Min Height:</span>
+              <div className="font-mono text-sm">{meshData.min.toFixed(3)}mm</div>
             </div>
             <div>
-              <span className="text-gray-600">Max Height:</span>
-              <div className="font-mono">{meshData.max.toFixed(3)}mm</div>
+              <span className="text-gray-600 text-xs">Max Height:</span>
+              <div className="font-mono text-sm">{meshData.max.toFixed(3)}mm</div>
             </div>
             <div>
-              <span className="text-gray-600">Range:</span>
-              <div className="font-mono">{meshData.range.toFixed(3)}mm</div>
+              <span className="text-gray-600 text-xs">Range:</span>
+              <div className="font-mono text-sm">{meshData.range.toFixed(3)}mm</div>
             </div>
             <div>
-              <span className="text-gray-600">Points:</span>
-              <div className="font-mono">{meshData.mesh.length}</div>
+              <span className="text-gray-600 text-xs">Points:</span>
+              <div className="font-mono text-sm">{meshData.mesh.length}</div>
             </div>
           </div>
         </div>

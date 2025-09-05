@@ -59,7 +59,7 @@ const ControlSection = memo(({
   return (
     <>
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900">Configuration Parameters</h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Configuration Parameters</h3>
         <ConnectionButton className="w-auto" />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -68,7 +68,7 @@ const ControlSection = memo(({
       <div className="mt-6 flex flex-wrap gap-2 items-center">
         <button
           onClick={generateGcode}
-          className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 transition-colors flex items-center space-x-2"
+          className="bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 text-white px-4 py-2 rounded-md transition-colors flex items-center space-x-2 shadow-sm"
         >
           <Play className="h-4 w-4" />
           <span>Generate G-code</span>
@@ -76,37 +76,37 @@ const ControlSection = memo(({
         <button
           onClick={sendToPrinter}
           disabled={serialStatus !== 'connected' || !generatedGcode || execState.running}
-          className={`px-4 py-2 rounded-md transition-colors ${serialStatus === 'connected' && generatedGcode && !execState.running ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'bg-gray-200 text-gray-500 cursor-not-allowed'}`}
+          className={`px-4 py-2 rounded-md transition-colors shadow-sm ${serialStatus === 'connected' && generatedGcode && !execState.running ? 'bg-green-600 hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-700 text-white' : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 cursor-not-allowed'}`}
         >
           Send to Printer
         </button>
 
         {execState.running && (
           <div className="flex items-center gap-2 text-sm">
-            <div className="w-40 bg-gray-200 rounded h-2 overflow-hidden">
-              <div className="h-2 bg-blue-600" style={{ width: `${execState.total ? Math.round((execState.progress/execState.total)*100) : 0}%` }} />
+            <div className="w-40 bg-gray-300 dark:bg-gray-600 rounded h-2 overflow-hidden">
+              <div className="h-2 bg-blue-600 dark:bg-blue-600" style={{ width: `${execState.total ? Math.round((execState.progress/execState.total)*100) : 0}%` }} />
             </div>
             <span>{execState.progress}/{execState.total}</span>
             {!execState.paused ? (
-              <button className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded" onClick={pauseExec}>Pause</button>
+              <button className="px-2 py-1 bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 rounded" onClick={pauseExec}>Pause</button>
             ) : (
-              <button className="px-2 py-1 bg-green-100 text-green-800 rounded" onClick={resumeExec}>Resume</button>
+              <button className="px-2 py-1 bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 rounded" onClick={resumeExec}>Resume</button>
             )}
-            <button className="px-2 py-1 bg-red-100 text-red-800 rounded" onClick={abortExec}>Abort</button>
+            <button className="px-2 py-1 bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 rounded" onClick={abortExec}>Abort</button>
           </div>
         )}
       </div>
       {generatedGcode && (
         <div className="mt-6">
           <div className="flex items-center justify-between mb-2">
-            <h4 className="font-medium text-gray-900">Generated G-code</h4>
+            <h4 className="font-medium text-gray-900 dark:text-white">Generated G-code</h4>
             <div className="flex items-center gap-2">
-              <button onClick={copyGcode} className="px-2 py-1 bg-gray-100 rounded text-sm">Copy</button>
-              <button onClick={()=>{ const v=!showGcode; setShowGcode(v); try{ if(step?.id){ sessionStorage.setItem(`gcode_show_${step.id}`, v?'1':'0') } } catch{} }} className="px-2 py-1 bg-gray-100 rounded text-sm">{showGcode ? 'Hide' : 'Show'}</button>
+              <button onClick={copyGcode} className="px-2 py-1 bg-gray-50 dark:bg-gray-8000 dark:bg-gray-700 rounded text-sm">Copy</button>
+              <button onClick={()=>{ const v=!showGcode; setShowGcode(v); try{ if(step?.id){ sessionStorage.setItem(`gcode_show_${step.id}`, v?'1':'0') } } catch{} }} className="px-2 py-1 bg-gray-50 dark:bg-gray-8000 dark:bg-gray-700 rounded text-sm">{showGcode ? 'Hide' : 'Show'}</button>
             </div>
           </div>
           {showGcode && (
-            <div className="bg-gray-900 text-green-400 p-4 rounded-md overflow-x-auto">
+            <div className="bg-gray-900 text-gray-400 dark:text-gray-500 p-4 rounded-md overflow-x-auto">
               <pre className="text-sm font-mono whitespace-pre-wrap">{generatedGcode}</pre>
             </div>
           )}
@@ -141,17 +141,17 @@ const ConfigurationTab = memo(({
   copyGcode
 }) => {
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6 space-y-4">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6 space-y-4">
       <MonitorSection />
-      <div className="h-px bg-gray-200" />
+      <div className="h-px bg-gray-300 dark:bg-gray-600" />
       {/* Add bed leveling visualization if this is a leveling-related step */}
       {step.category === 'Movement' && step.id.includes('level') && (
         <>
           <div className="mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Bed Level Visualization</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Bed Level Visualization</h3>
             <BedLevelVisualization />
           </div>
-          <div className="h-px bg-gray-200" />
+          <div className="h-px bg-gray-300 dark:bg-gray-600" />
         </>
       )}
       <ControlSection 
@@ -346,8 +346,8 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
     return (
       <div className="text-center py-12">
         <AlertCircle className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-        <h3 className="text-lg font-medium text-gray-900 mb-2">No Calibration Step Selected</h3>
-        <p className="text-gray-500">Please select a calibration step from the sidebar</p>
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No Calibration Step Selected</h3>
+        <p className="text-gray-500 dark:text-gray-400 dark:text-gray-500">Please select a calibration step from the sidebar</p>
       </div>
     )
   }
@@ -363,7 +363,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
     })
   }, [])
 
-  const generateGcode = useCallback(() => {
+  const generateGcode = useCallback(async () => {
     console.log('Generating G-code for step:', step?.id)
     console.log('Step gcode function:', step?.gcode)
     console.log('Input values:', inputValuesRef.current)
@@ -388,7 +388,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
         }
 
         console.log('Calling gcode function with inputs:', inputValuesRef.current)
-        gcode = step.gcode(inputValuesRef.current)
+        gcode = await step.gcode(inputValuesRef.current)
         console.log('Generated gcode:', gcode)
       } else if (typeof step.gcode === 'string') {
         gcode = step.gcode
@@ -427,7 +427,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
       return
     }
     if (!generatedGcode) {
-      generateGcode()
+      await generateGcode()
       // Wait for next render to get updated gcode
       await new Promise(resolve => setTimeout(resolve, 0))
       if (!generatedGcode) return
@@ -595,7 +595,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
             onError={() => setIdx((i) => i + 1)}
           />
         ) : (
-          <div className="w-full h-56 bg-gray-100 rounded flex items-center justify-center text-xs text-gray-500">
+          <div className="w-full h-56 bg-gray-50 dark:bg-gray-8000 dark:bg-gray-700 rounded flex items-center justify-center text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">
             Image unavailable. {fallbackQuery && (
               <a
                 className="underline ml-1"
@@ -605,7 +605,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
             )}
           </div>
         )}
-        {caption && <div className="text-xs text-gray-600 mt-2">{caption}</div>}
+        {caption && <div className="text-xs text-gray-600 dark:text-gray-300 mt-2">{caption}</div>}
       </div>
     )
   }
@@ -647,9 +647,9 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
               id={key}
               checked={value}
               onChange={(e) => handleInputChange(key, e.target.checked)}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              className="h-4 w-4 text-blue-50 dark:text-blue-9000 focus:ring-blue-500 border-gray-300 dark:border-gray-600 rounded"
             />
-            <label htmlFor={key} className="ml-2 text-sm text-gray-700">
+            <label htmlFor={key} className="ml-2 text-sm text-gray-700 dark:text-gray-300">
               {label}
             </label>
           </div>
@@ -657,9 +657,9 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
       case 'number':
         return (
           <div key={key}>
-            <label htmlFor={key} className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor={key} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               {label}
-              {required && <span className="text-red-500 ml-1">*</span>}
+              {required && <span className="text-gray-700 dark:text-gray-300 ml-1">*</span>}
             </label>
             <input
               type="number"
@@ -670,16 +670,16 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
               max={max}
               step={stepValue}
               required={required}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
         )
       case 'text':
         return (
           <div key={key}>
-            <label htmlFor={key} className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor={key} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               {label}
-              {required && <span className="text-red-500 ml-1">*</span>}
+              {required && <span className="text-gray-700 dark:text-gray-300 ml-1">*</span>}
             </label>
             <input
               type="text"
@@ -687,7 +687,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
               value={value}
               onChange={(e) => handleInputChange(key, e.target.value)}
               required={required}
-              className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
         )
@@ -713,19 +713,19 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center space-x-3 mb-2">
-          <CategoryIcon className="h-6 w-6 text-blue-600" />
-          <h2 className="text-2xl font-bold text-gray-900">{step.title}</h2>
+          <CategoryIcon className="h-6 w-6 text-blue-50 dark:text-blue-9000" />
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{step.title}</h2>
           {isCompleted && (
-            <CheckCircle className="h-6 w-6 text-green-500" />
+            <CheckCircle className="h-6 w-6 text-gray-500 dark:text-gray-400" />
           )}
         </div>
-        <p className="text-gray-600">{step.description}</p>
+        <p className="text-gray-600 dark:text-gray-300">{step.description}</p>
         <div className="mt-2">
           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-            step.category === 'Temperature' ? 'bg-red-100 text-red-800' :
-            step.category === 'Movement' ? 'bg-blue-100 text-blue-800' :
-            step.category === 'Quality' ? 'bg-green-100 text-green-800' :
-            'bg-gray-100 text-gray-800'
+            step.category === 'Temperature' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+            step.category === 'Movement' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+            step.category === 'Quality' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+            'bg-gray-50 dark:bg-gray-8000 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
           }`}>
             {step.category}
           </span>
@@ -733,14 +733,14 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-gray-200 mb-4">
+      <div className="border-b border-gray-200 dark:border-gray-700 mb-4">
         <nav className="-mb-px flex space-x-6" aria-label="Tabs">
           {Tabs.map((tab) => (
             <button
               key={tab}
               onClick={tabHandlers[tab]}
               className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === tab ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                activeTab === tab ? 'border-deep-900 text-blue-50 dark:text-blue-9000' : 'border-transparent text-gray-500 dark:text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600'
               }`}
             >
               {tab}
@@ -751,7 +751,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
 
       {/* Pre-checklist gate for Configuration */}
       {activeTab === 'Configuration' && !canProceed && (
-        <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+        <div className="mb-4 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-sm text-light-800">
           Complete the pre-calibration checklist in the Instructions tab before proceeding.
         </div>
       )}
@@ -761,16 +761,16 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
         <div className="space-y-6">
           {/* Checklist */}
           {step.checklist && step.checklist.length > 0 && (
-            <div className="bg-white border border-gray-200 rounded p-4">
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-4">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="font-medium text-gray-900">Pre-Calibration Checklist</h3>
-                <ListChecks className="h-4 w-4 text-gray-500" />
+                <h3 className="font-medium text-gray-900 dark:text-white">Pre-Calibration Checklist</h3>
+                <ListChecks className="h-4 w-4 text-gray-500 dark:text-gray-400 dark:text-gray-500" />
               </div>
               <div className="space-y-2">
                 {step.checklist.map((item, idx) => (
                   <label key={idx} className="flex items-center space-x-2 text-sm">
                     <input type="checkbox" checked={!!checklist[idx]} onChange={(e)=>setChecklist((prev)=>({...prev, [idx]: e.target.checked}))} />
-                    <span className="text-gray-700">{item}</span>
+                    <span className="text-gray-700 dark:text-gray-300">{item}</span>
                   </label>
                 ))}
               </div>
@@ -778,22 +778,22 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
           )}
 
           {/* Instructions list */}
-          <div className="bg-white border border-gray-200 rounded p-4">
-            <h3 className="font-medium text-gray-900 mb-2">Step-by-step Guide</h3>
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-4">
+            <h3 className="font-medium text-gray-900 dark:text-white mb-2">Step-by-step Guide</h3>
             {step.instructions && step.instructions.length > 0 ? (
-              <ol className="list-decimal list-inside space-y-2 text-sm text-gray-700">
+              <ol className="list-decimal list-inside space-y-2 text-sm text-gray-700 dark:text-gray-300">
                 {step.instructions.map((line, i) => (
                   <li key={i}>{line}</li>
                 ))}
               </ol>
             ) : (
-              <p className="text-sm text-gray-500">No detailed instructions available.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">No detailed instructions available.</p>
             )}
 
             {step.commonIssues && step.commonIssues.length > 0 && (
               <div className="mt-4">
-                <h4 className="font-medium text-gray-900 mb-2">Common Issues & Solutions</h4>
-                <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
+                <h4 className="font-medium text-gray-900 dark:text-white mb-2">Common Issues & Solutions</h4>
+                <ul className="list-disc list-inside space-y-1 text-sm text-gray-700 dark:text-gray-300">
                   {step.commonIssues.map((ci, i) => (
                     <li key={i}><span className="font-medium">{ci.issue}:</span> {ci.solution}</li>
                   ))}
@@ -802,7 +802,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
             )}
 
             {step.expectedOutcomes && (
-              <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded text-sm text-green-800">
+              <div className="mt-4 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-sm text-light-800">
                 <span className="font-medium">Expected Outcome:</span> {step.expectedOutcomes}
               </div>
             )}
@@ -828,9 +828,9 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
           {step.visualAids && step.visualAids.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {step.visualAids.map((v, i) => (
-                <figure key={i} className="bg-white border border-gray-200 rounded p-2">
+                <figure key={i} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-2">
                   <img src={v.imageUrl} alt={v.caption} className="w-full h-48 object-cover rounded" />
-                  <figcaption className="text-xs text-gray-600 mt-1">{v.caption}</figcaption>
+                  <figcaption className="text-xs text-gray-600 dark:text-gray-300 mt-1">{v.caption}</figcaption>
                 </figure>
               ))}
             </div>
@@ -838,8 +838,8 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
           {/* GOOD vs BAD reference gallery */}
           {referenceImageMap[step.id] && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-white border border-green-200 rounded p-3">
-                <div className="text-sm font-semibold text-green-700 mb-2">GOOD RESULT</div>
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-3">
+                <div className="text-sm font-semibold text-light-700 mb-2">GOOD RESULT</div>
                 <ReferenceImage
                   urls={referenceImageMap[step.id].good.urls}
                   alt="Good result"
@@ -847,8 +847,8 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
                   fallbackQuery={`${step.title} good result 3D print`}
                 />
               </div>
-              <div className="bg-white border border-red-200 rounded p-3">
-                <div className="text-sm font-semibold text-red-700 mb-2">BAD RESULT</div>
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-3">
+                <div className="text-sm font-semibold text-gray-900 dark:text-white mb-2">BAD RESULT</div>
                 <ReferenceImage
                   urls={referenceImageMap[step.id].bad.urls}
                   alt="Bad result"
@@ -859,7 +859,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
             </div>
           )}
           {!step.videoUrl && (!step.visualAids || step.visualAids.length === 0) && (
-            <div className="text-sm text-gray-500">No visual references available.</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">No visual references available.</div>
           )}
         </div>
       )}
@@ -884,25 +884,25 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
 
       {activeTab === 'Results' && (
         <div className="space-y-4">
-          <div className="bg-white border border-gray-200 rounded p-4">
-            <h3 className="font-medium text-gray-900 mb-3">Record Measurements</h3>
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-4">
+            <h3 className="font-medium text-gray-900 dark:text-white mb-3">Record Measurements</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <label className="text-sm">
-                <span className="text-gray-700">Primary Measurement</span>
-                <input className="w-full border border-gray-300 rounded px-2 py-1" value={results.measurements.primary || ''} onChange={(e)=>setResults(prev=>({ ...prev, measurements: { ...prev.measurements, primary: e.target.value }}))} />
+                <span className="text-gray-700 dark:text-gray-300">Primary Measurement</span>
+                <input className="w-full border border-gray-300 dark:border-gray-600 rounded px-2 py-1" value={results.measurements.primary || ''} onChange={(e)=>setResults(prev=>({ ...prev, measurements: { ...prev.measurements, primary: e.target.value }}))} />
               </label>
               <label className="text-sm">
-                <span className="text-gray-700">Secondary</span>
-                <input className="w-full border border-gray-300 rounded px-2 py-1" value={results.measurements.secondary || ''} onChange={(e)=>setResults(prev=>({ ...prev, measurements: { ...prev.measurements, secondary: e.target.value }}))} />
+                <span className="text-gray-700 dark:text-gray-300">Secondary</span>
+                <input className="w-full border border-gray-300 dark:border-gray-600 rounded px-2 py-1" value={results.measurements.secondary || ''} onChange={(e)=>setResults(prev=>({ ...prev, measurements: { ...prev.measurements, secondary: e.target.value }}))} />
               </label>
               <label className="text-sm">
-                <span className="text-gray-700">Observation</span>
-                <input className="w-full border border-gray-300 rounded px-2 py-1" value={results.measurements.observation || ''} onChange={(e)=>setResults(prev=>({ ...prev, measurements: { ...prev.measurements, observation: e.target.value }}))} />
+                <span className="text-gray-700 dark:text-gray-300">Observation</span>
+                <input className="w-full border border-gray-300 dark:border-gray-600 rounded px-2 py-1" value={results.measurements.observation || ''} onChange={(e)=>setResults(prev=>({ ...prev, measurements: { ...prev.measurements, observation: e.target.value }}))} />
               </label>
             </div>
             {/* Example: auto-calc for E-steps */}
             {step.id === 'extruder-esteps' && (
-              <div className="mt-3 text-sm text-gray-700">
+              <div className="mt-3 text-sm text-gray-700 dark:text-gray-300">
                 <span className="font-medium">Helper:</span>{' '}
                 {(() => {
                   const current = Number(inputValuesRef.current.currentEsteps || 0)
@@ -912,9 +912,9 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
                     const newEsteps = (current * requested) / actual
                     return (
                       <>
-                        Suggested E-steps: <span className="text-indigo-700 font-medium">{newEsteps.toFixed(2)}</span>
+                        Suggested E-steps: <span className="text-gray-800 dark:text-gray-200 font-medium">{newEsteps.toFixed(2)}</span>
                         <button
-                          className="ml-2 px-2 py-1 bg-indigo-600 text-white rounded"
+                          className="ml-2 px-2 py-1 bg-accent-medium text-white rounded"
                           onClick={() => setGeneratedGcode(`M92 E${newEsteps.toFixed(2)}\nM500`)}
                         >
                           Generate Update G-code
@@ -928,15 +928,15 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
             )}
           </div>
 
-          <div className="bg-white border border-gray-200 rounded p-4">
-            <h3 className="font-medium text-gray-900 mb-3">Notes</h3>
-            <textarea className="w-full border border-gray-300 rounded px-3 py-2 h-28" value={results.notes} onChange={(e)=>setResults(prev=>({ ...prev, notes: e.target.value }))} />
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-4">
+            <h3 className="font-medium text-gray-900 dark:text-white mb-3">Notes</h3>
+            <textarea className="w-full border border-gray-300 dark:border-gray-600 rounded px-3 py-2 h-28" value={results.notes} onChange={(e)=>setResults(prev=>({ ...prev, notes: e.target.value }))} />
           </div>
 
-          <div className="bg-white border border-gray-200 rounded p-4">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-medium text-gray-900">Photos</h3>
-              <button className="px-3 py-2 bg-gray-100 rounded" onClick={()=>fileInputRef.current?.click()}><FolderUp className="h-4 w-4 inline mr-1"/>Upload</button>
+              <h3 className="font-medium text-gray-900 dark:text-white">Photos</h3>
+              <button className="px-3 py-2 bg-gray-50 dark:bg-gray-8000 dark:bg-gray-700 rounded" onClick={()=>fileInputRef.current?.click()}><FolderUp className="h-4 w-4 inline mr-1"/>Upload</button>
               <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoUpload} />
             </div>
             {results.photos.length > 0 ? (
@@ -944,17 +944,17 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
                 {results.photos.map((p, i) => (
                   <div key={i} className="border rounded overflow-hidden">
                     <img src={p.dataUrl} alt={p.name} className="w-full h-24 object-cover" />
-                    <div className="text-xs text-gray-600 px-2 py-1 truncate">{p.name}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-300 px-2 py-1 truncate">{p.name}</div>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="text-sm text-gray-500">No photos uploaded.</div>
+              <div className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">No photos uploaded.</div>
             )}
           </div>
 
           {/* Suggestion placeholder: computation rules can be implemented per step */}
-          <div className="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-800">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-3 text-sm text-light-800">
             Suggestions will appear here based on recorded measurements.
           </div>
         </div>
@@ -966,14 +966,14 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
           onClick={saveConfiguration}
           disabled={!canProceed}
           className={`px-4 py-2 rounded-md transition-colors flex items-center space-x-2 ${
-            canProceed ? 'bg-green-600 text-white hover:bg-green-700' : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+            canProceed ? 'bg-gray-600 dark:bg-gray-300 text-white hover:bg-gray-700 dark:bg-gray-200' : 'bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 dark:text-gray-500 cursor-not-allowed'
           }`}
         >
           <Save className="h-4 w-4" />
           <span>{isCompleted ? 'Update Results' : 'Save & Mark Complete'}</span>
         </button>
         {isCompleted && (
-          <button className="ml-2 px-4 py-2 bg-gray-100 rounded" onClick={()=>setShowReport(true)}>Generate Report</button>
+          <button className="ml-2 px-4 py-2 bg-gray-50 dark:bg-gray-8000 dark:bg-gray-700 rounded" onClick={()=>setShowReport(true)}>Generate Report</button>
         )}
       </div>
 
