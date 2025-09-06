@@ -193,6 +193,7 @@ const ControlSection = memo(({
                     content={generatedGcode} 
                     width="100%" 
                     height={600}
+                    buildPlateSize={activePrinter?.bedSize || { x: 220, y: 220 }}
                   />
                 </div>
               )}

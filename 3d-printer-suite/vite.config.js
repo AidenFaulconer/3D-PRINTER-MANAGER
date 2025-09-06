@@ -37,8 +37,7 @@ export default defineConfig({
       '@react-three/drei/core/PerspectiveCamera',
       '@react-three/drei/core/Stats',
       'comlink'
-    ],
-    exclude: ['@react-three/fiber']
+    ]
   },
   build: {
     commonjsOptions: {

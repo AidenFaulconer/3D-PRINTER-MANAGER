@@ -9,8 +9,8 @@ const MOVE_COLORS = {
   retract: new THREE.Color(0xff0000)  // Red
 }
 
-// Simple G-code parser that works in the main thread
-const parseGcode = (gcode) => {
+// Optimized G-code parser with point reduction for performance
+const parseGcode = (gcode, maxPointsPerLayer = 1000) => {
   const lines = gcode.split('\n')
   const layers = new Map()
   let currentPosition = { x: 0, y: 0, z: 0, e: 0 }
@@ -19,6 +19,9 @@ const parseGcode = (gcode) => {
     min: { x: Infinity, y: Infinity, z: Infinity },
     max: { x: -Infinity, y: -Infinity, z: -Infinity }
   }
+  
+  // Point reduction variables
+  const pointReduction = new Map() // Track points per layer for reduction
 
   const updateBounds = (pos) => {
     bounds.min.x = Math.min(bounds.min.x, pos.x)
@@ -76,18 +79,30 @@ const parseGcode = (gcode) => {
         if (!layers.has(layerZ)) {
           layers.set(layerZ, {
             points: [],
-            moveTypes: []
+            moveTypes: [],
+            pointCount: 0
           })
+          pointReduction.set(layerZ, 0)
         }
         
         const layerData = layers.get(layerZ)
+        const currentPointCount = pointReduction.get(layerZ)
         
-        layerData.points.push(
-          lastPosition.x, lastPosition.y, lastPosition.z,
-          currentPosition.x, currentPosition.y, currentPosition.z
-        )
-        layerData.moveTypes.push(moveType)
-
+        // Point reduction: only add every Nth point if layer has too many points
+        const shouldAddPoint = currentPointCount < maxPointsPerLayer || 
+                              (currentPointCount % Math.ceil(currentPointCount / maxPointsPerLayer)) === 0 ||
+                              moveType === 'extrude' // Always keep extrusion moves
+        
+        if (shouldAddPoint) {
+          layerData.points.push(
+            lastPosition.x, lastPosition.y, lastPosition.z,
+            currentPosition.x, currentPosition.y, currentPosition.z
+          )
+          layerData.moveTypes.push(moveType)
+          layerData.pointCount++
+        }
+        
+        pointReduction.set(layerZ, currentPointCount + 1)
         updateBounds(currentPosition)
         lastPosition = { ...currentPosition }
       } else {
@@ -127,13 +142,13 @@ const parseGcode = (gcode) => {
   }
 }
 
-const Scene = ({ geometryData, visibleLayers, showTravelMoves }) => {
+const Scene = ({ geometryData, visibleLayers, showTravelMoves, buildPlateSize }) => {
   if (!geometryData) {
     // Show a test cube if no geometry data
     return (
       <>
         <gridHelper 
-          args={[200, 20, '#cccccc', '#cccccc']} 
+          args={[buildPlateSize.x, Math.max(10, Math.floor(buildPlateSize.x / 10)), '#cccccc', '#cccccc']} 
           position={[0, 0, 0]} 
           rotation={[-Math.PI / 2, 0, 0]}
         />
@@ -186,9 +201,9 @@ const Scene = ({ geometryData, visibleLayers, showTravelMoves }) => {
 
   return (
     <>
-      {/* Grid lines on the bed plane (Z=0) */}
+      {/* Grid lines on the bed plane (Z=0) - sized to build plate */}
       <gridHelper 
-        args={[200, 20, '#cccccc', '#cccccc']} 
+        args={[buildPlateSize.x, Math.max(10, Math.floor(buildPlateSize.x / 10)), '#cccccc', '#cccccc']} 
         position={[0, 0, 0]} 
         rotation={[-Math.PI / 2, 0, 0]}
       />
@@ -281,19 +296,35 @@ const Scene = ({ geometryData, visibleLayers, showTravelMoves }) => {
   )
 }
 
-const SimpleGcodeViewer3D = ({ content, width = 800, height = 700 }) => {
+const SimpleGcodeViewer3D = ({ content, width = 800, height = 700, buildPlateSize = { x: 220, y: 220 } }) => {
   const [geometryData, setGeometryData] = useState(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [currentLayer, setCurrentLayer] = useState(0)
   const [showTravelMoves, setShowTravelMoves] = useState(true)
   const [cameraPosition, setCameraPosition] = useState([30, 30, 15])
+  const [qualityLevel, setQualityLevel] = useState('medium') // 'low', 'medium', 'high'
+  const [maxPointsPerLayer, setMaxPointsPerLayer] = useState(1000)
 
-  console.log('SimpleGcodeViewer3D rendered with content length:', content?.length, 'width:', width, 'height:', height)
+  console.log('SimpleGcodeViewer3D rendered with content length:', content?.length, 'width:', width, 'height:', height, 'buildPlateSize:', buildPlateSize)
+
+  // Update quality settings based on content size
+  useEffect(() => {
+    if (content && content.length > 50000) {
+      setQualityLevel('low')
+      setMaxPointsPerLayer(500)
+    } else if (content && content.length > 20000) {
+      setQualityLevel('medium')
+      setMaxPointsPerLayer(1000)
+    } else {
+      setQualityLevel('high')
+      setMaxPointsPerLayer(2000)
+    }
+  }, [content])
 
   // Process G-code when content changes
   useEffect(() => {
     const processGcode = () => {
-      console.log('SimpleGcodeViewer3D: Processing G-code, content length:', content?.length)
+      console.log('SimpleGcodeViewer3D: Processing G-code, content length:', content?.length, 'quality:', qualityLevel, 'maxPoints:', maxPointsPerLayer)
       if (!content) {
         console.log('SimpleGcodeViewer3D: No content, skipping processing')
         return
@@ -302,7 +333,7 @@ const SimpleGcodeViewer3D = ({ content, width = 800, height = 700 }) => {
       setIsProcessing(true)
       try {
         console.log('SimpleGcodeViewer3D: Starting G-code processing...')
-        const result = parseGcode(content)
+        const result = parseGcode(content, maxPointsPerLayer)
         console.log('SimpleGcodeViewer3D: Processing complete, result:', result)
         setGeometryData(result)
         setCurrentLayer(result.layers.length - 1) // Show all layers initially
@@ -398,6 +429,7 @@ const SimpleGcodeViewer3D = ({ content, width = 800, height = 700 }) => {
             geometryData={geometryData}
             visibleLayers={visibleLayers}
             showTravelMoves={showTravelMoves}
+            buildPlateSize={buildPlateSize}
           />
         </Canvas>
 
@@ -419,39 +451,82 @@ const SimpleGcodeViewer3D = ({ content, width = 800, height = 700 }) => {
           </div>
 
           {/* View options */}
-          <div className="flex items-center justify-between">
-            <label className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={showTravelMoves}
-                onChange={(e) => setShowTravelMoves(e.target.checked)}
-                className="rounded text-blue-500"
-              />
-              <span className="text-sm">Show Travel Moves</span>
-            </label>
-            <button
-              onClick={() => {
-                if (geometryData?.bounds) {
-                  const { min, max } = geometryData.bounds
-                  const centerX = (min.x + max.x) / 2
-                  const centerY = (min.y + max.y) / 2
-                  const centerZ = (min.z + max.z) / 2
-                  const sizeX = max.x - min.x
-                  const sizeY = max.y - min.y
-                  const sizeZ = max.z - min.z
-                  const maxSize = Math.max(sizeX, sizeY, sizeZ)
-                  const distance = Math.max(maxSize * 1.5, 20)
-                  setCameraPosition([
-                    centerX + distance * 0.5,
-                    centerY + distance * 0.5,
-                    centerZ + distance * 0.3
-                  ])
-                }
-              }}
-              className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
-            >
-              Reset View
-            </button>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  checked={showTravelMoves}
+                  onChange={(e) => setShowTravelMoves(e.target.checked)}
+                  className="rounded text-blue-500"
+                />
+                <span className="text-sm">Show Travel Moves</span>
+              </label>
+              <button
+                onClick={() => {
+                  if (geometryData?.bounds) {
+                    const { min, max } = geometryData.bounds
+                    const centerX = (min.x + max.x) / 2
+                    const centerY = (min.y + max.y) / 2
+                    const centerZ = (min.z + max.z) / 2
+                    const sizeX = max.x - min.x
+                    const sizeY = max.y - min.y
+                    const sizeZ = max.z - min.z
+                    const maxSize = Math.max(sizeX, sizeY, sizeZ)
+                    const distance = Math.max(maxSize * 1.5, 20)
+                    setCameraPosition([
+                      centerX + distance * 0.5,
+                      centerY + distance * 0.5,
+                      centerZ + distance * 0.3
+                    ])
+                  }
+                }}
+                className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+              >
+                Reset View
+              </button>
+            </div>
+            
+            {/* Quality Controls */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-600">Quality:</span>
+              <div className="flex items-center space-x-2">
+                <select
+                  value={qualityLevel}
+                  onChange={(e) => {
+                    const newQuality = e.target.value
+                    setQualityLevel(newQuality)
+                    if (newQuality === 'low') setMaxPointsPerLayer(500)
+                    else if (newQuality === 'medium') setMaxPointsPerLayer(1000)
+                    else setMaxPointsPerLayer(2000)
+                  }}
+                  className="px-2 py-1 text-sm border border-gray-300 rounded"
+                >
+                  <option value="low">Low (Fast)</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High (Slow)</option>
+                </select>
+                <button
+                  onClick={() => {
+                    if (content) {
+                      setIsProcessing(true)
+                      try {
+                        const result = parseGcode(content, maxPointsPerLayer)
+                        setGeometryData(result)
+                        setCurrentLayer(result.layers.length - 1)
+                      } catch (error) {
+                        console.error('Error reprocessing G-code:', error)
+                      } finally {
+                        setIsProcessing(false)
+                      }
+                    }
+                  }}
+                  className="px-2 py-1 bg-green-500 text-white text-xs rounded hover:bg-green-600"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -464,8 +539,16 @@ const SimpleGcodeViewer3D = ({ content, width = 800, height = 700 }) => {
             <span className="ml-2 font-medium">{geometryData.stats.totalLayers}</span>
           </div>
           <div>
-            <span className="text-gray-500">Total Points:</span>
+            <span className="text-gray-500">Rendered Points:</span>
             <span className="ml-2 font-medium">{geometryData.stats.totalPoints}</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Quality Level:</span>
+            <span className="ml-2 font-medium capitalize">{qualityLevel}</span>
+          </div>
+          <div>
+            <span className="text-gray-500">Max Points/Layer:</span>
+            <span className="ml-2 font-medium">{maxPointsPerLayer}</span>
           </div>
           <div>
             <span className="text-gray-500">Build Volume:</span>
@@ -473,6 +556,12 @@ const SimpleGcodeViewer3D = ({ content, width = 800, height = 700 }) => {
               {Math.round(geometryData.bounds.max.x - geometryData.bounds.min.x)}x
               {Math.round(geometryData.bounds.max.y - geometryData.bounds.min.y)}x
               {Math.round(geometryData.bounds.max.z - geometryData.bounds.min.z)}mm
+            </span>
+          </div>
+          <div>
+            <span className="text-gray-500">Performance:</span>
+            <span className="ml-2 font-medium">
+              {qualityLevel === 'low' ? 'Fast' : qualityLevel === 'medium' ? 'Balanced' : 'Detailed'}
             </span>
           </div>
         </div>
