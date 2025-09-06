@@ -13,18 +13,42 @@ import {
   Image,
   ListChecks,
   Video,
-  FolderUp
+  FolderUp,
+  Box
 } from 'lucide-react'
 import ConnectionButton from './controls/ConnectionButton'
 import usePrintersStore from '../stores/printersStore'
 import useSerialStore from '../stores/serialStore'
+import { 
+  loadGlobalParameters,
+  saveGlobalParameters,
+  updateGlobalParameters
+} from '../utils/ParameterTracker'
 
 import CalibrationReportModal from './CalibrationReportModal'
 import CalibrationMonitor from './CalibrationMonitor'
 import TemperatureControl from './controls/TemperatureControl'
 import BedLevelVisualization from './BedLevelVisualization'
+import { GcodeViewer3D } from './GcodeViewer3D'
+import { SimpleGcodeViewer3D } from './SimpleGcodeViewer3D'
 
 const Tabs = ['Instructions', 'Visuals', 'Configuration', 'Results']
+
+// Global parameters that should persist across all calibration steps
+const GLOBAL_PARAMETERS = {
+  hotendTemp: true,
+  bedTemp: true,
+  nozzleDiameter: true,
+  layerHeight: true,
+  printSpeed: true,
+  retractionDistance: true,
+  retractionSpeed: true,
+  primeSpeed: true,
+  flowRate: true,
+  wallThickness: true,
+  enableABL: true,
+  firstLayerSpeed: true
+}
 
 // Separate monitor component to prevent re-renders (TemperatureControl-only for this view)
 const MonitorSection = memo(() => {
@@ -51,7 +75,10 @@ const ControlSection = memo(({
   showGcode,
   setShowGcode,
   generatedGcode,
-  copyGcode
+  copyGcode,
+  activePrinterId,
+  gcodeViewMode,
+  setGcodeViewMode
 }) => {
   // Get only the serial state we need directly from the store
   const serialStatus = useSerialStore(state => state.status)
@@ -62,6 +89,27 @@ const ControlSection = memo(({
         <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Configuration Parameters</h3>
         <ConnectionButton className="w-auto" />
       </div>
+      
+      {/* Global Parameters Display */}
+      {activePrinterId && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
+          <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
+            <Settings className="w-4 h-4" />
+            Global Parameters for Printer {activePrinterId}
+          </h4>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+            {Object.entries(loadGlobalParameters(activePrinterId)).map(([key, value]) => (
+              <div key={key} className="flex justify-between items-center">
+                <span className="text-blue-700 dark:text-blue-300 font-medium">{key}:</span>
+                <span className="text-blue-900 dark:text-blue-100 font-mono">{value}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+            These parameters persist across all calibration steps and are saved per printer.
+          </p>
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {(step.inputs || []).map(renderInput)}
       </div>
@@ -106,8 +154,48 @@ const ControlSection = memo(({
             </div>
           </div>
           {showGcode && (
-            <div className="bg-gray-900 text-gray-400 dark:text-gray-500 p-4 rounded-md overflow-x-auto">
-              <pre className="text-sm font-mono whitespace-pre-wrap">{generatedGcode}</pre>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Preview Mode:</span>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setGcodeViewMode('text')}
+                    className={`px-3 py-1 rounded text-sm flex items-center space-x-1 ${
+                      gcodeViewMode === 'text' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Text</span>
+                  </button>
+                  <button
+                    onClick={() => setGcodeViewMode('3d')}
+                    className={`px-3 py-1 rounded text-sm flex items-center space-x-1 ${
+                      gcodeViewMode === '3d' 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    <Box className="w-4 h-4" />
+                    <span>3D</span>
+                  </button>
+                </div>
+              </div>
+              
+              {gcodeViewMode === 'text' ? (
+                <div className="bg-gray-900 text-gray-400 dark:text-gray-500 p-4 rounded-md overflow-x-auto">
+                  <pre className="text-sm font-mono whitespace-pre-wrap">{generatedGcode}</pre>
+                </div>
+              ) : (
+                <div className="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden">
+                  <SimpleGcodeViewer3D 
+                    content={generatedGcode} 
+                    width="100%" 
+                    height={600}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -138,7 +226,10 @@ const ConfigurationTab = memo(({
   showGcode,
   setShowGcode,
   generatedGcode,
-  copyGcode
+  copyGcode,
+  activePrinterId,
+  gcodeViewMode,
+  setGcodeViewMode
 }) => {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-6 space-y-4">
@@ -168,6 +259,9 @@ const ConfigurationTab = memo(({
         setShowGcode={setShowGcode}
         generatedGcode={generatedGcode}
         copyGcode={copyGcode}
+        activePrinterId={activePrinterId}
+        gcodeViewMode={gcodeViewMode}
+        setGcodeViewMode={setGcodeViewMode}
       />
     </div>
   )
@@ -233,12 +327,26 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
   const [generatedGcode, setGeneratedGcode] = useState('')
   const [isCompleted, setIsCompleted] = useState(false)
   const [showGcode, setShowGcode] = useState(false)
+  const [gcodeViewMode, setGcodeViewMode] = useState('3d') // 'text' or '3d'
   const [checklist, setChecklist] = useState({})
   const [results, setResults] = useState({ measurements: {}, notes: '', photos: [] })
   const fileInputRef = useRef(null)
 
-  const [execState, setExecState] = useState({ running: false, paused: false, progress: 0, total: 0 })
   const [showReport, setShowReport] = useState(false)
+  
+  // Get global execution state
+  const activeExecution = useSerialStore(state => state.activeExecution)
+  const execState = useMemo(() => {
+    if (!activeExecution) {
+      return { running: false, paused: false, progress: 0, total: 0 }
+    }
+    return {
+      running: activeExecution.status === 'running',
+      paused: false, // Global execution doesn't track pause state
+      progress: activeExecution.progress?.sent || 0,
+      total: activeExecution.progress?.total || 0
+    }
+  }, [activeExecution])
   
   // Remove unused updateActiveTab since we're using setActiveTab directly
 
@@ -261,11 +369,16 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
         setInputValues(stepData.inputValues);
         inputValuesRef.current = stepData.inputValues;
       } else if (step.inputs) {
+        // Load global parameters for this printer
+        const globalParams = activePrinterId ? loadGlobalParameters(activePrinterId) : {};
+        console.log('Loaded global parameters:', globalParams);
+        
         const initialValues = {};
         step.inputs.forEach(input => {
-          initialValues[input.key] = input.defaultValue;
+          // Priority: global parameters > step defaults
+          initialValues[input.key] = globalParams[input.key] || input.defaultValue;
         });
-        console.log('Initializing input values with defaults:', initialValues);
+        console.log('Initializing input values with global + defaults:', initialValues);
         setInputValues(initialValues);
         inputValuesRef.current = initialValues;
       }
@@ -359,9 +472,16 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
         [key]: value
       }
       inputValuesRef.current = newValues
+      
+      // Update global parameters if this is a global parameter
+      if (activePrinterId && GLOBAL_PARAMETERS[key]) {
+        updateGlobalParameters(activePrinterId, step.id, newValues)
+        console.log('Updated global parameter:', key, '=', value)
+      }
+      
       return newValues
     })
-  }, [])
+  }, [activePrinterId, step.id])
 
   const generateGcode = useCallback(async () => {
     console.log('Generating G-code for step:', step?.id)
@@ -635,8 +755,9 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
 
   const renderInput = useCallback((input) => {
     const { type, label, key, defaultValue, min, max, step: stepValue, required } = input
-    // Access current inputValues via ref to avoid dependency issues
-    const value = inputValuesRef.current[key] ?? defaultValue
+    // Use current inputValues state
+    const value = inputValues[key] ?? defaultValue
+    const isGlobalParam = GLOBAL_PARAMETERS[key]
 
     switch (type) {
       case 'checkbox':
@@ -651,6 +772,11 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
             />
             <label htmlFor={key} className="ml-2 text-sm text-gray-700 dark:text-gray-300">
               {label}
+              {isGlobalParam && (
+                <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                  Global
+                </span>
+              )}
             </label>
           </div>
         )
@@ -660,6 +786,11 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
             <label htmlFor={key} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               {label}
               {required && <span className="text-gray-700 dark:text-gray-300 ml-1">*</span>}
+              {isGlobalParam && (
+                <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                  Global
+                </span>
+              )}
             </label>
             <input
               type="number"
@@ -680,6 +811,11 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
             <label htmlFor={key} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
               {label}
               {required && <span className="text-gray-700 dark:text-gray-300 ml-1">*</span>}
+              {isGlobalParam && (
+                <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                  Global
+                </span>
+              )}
             </label>
             <input
               type="text"
@@ -694,7 +830,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
       default:
         return null
     }
-  }, [handleInputChange])
+  }, [inputValues, handleInputChange])
 
   const handlePhotoUpload = (e) => {
     const files = Array.from(e.target.files || [])
@@ -879,6 +1015,9 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
           setShowGcode={setShowGcode}
           generatedGcode={generatedGcode}
           copyGcode={copyGcode}
+          activePrinterId={activePrinterId}
+          gcodeViewMode={gcodeViewMode}
+          setGcodeViewMode={setGcodeViewMode}
         />
       )}
 

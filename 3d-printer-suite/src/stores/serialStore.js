@@ -15,6 +15,7 @@ const useSerialStore = create(
       let cleanupTimeoutRef = null
       let isConnectingRef = false
       let tempMonitorRef = null
+      let currentExecutionAbortController = null
 
       const appendSerialLog = (message, type = 'sys') => {
         const timestamp = new Date().toLocaleTimeString()
@@ -1292,7 +1293,8 @@ const useSerialStore = create(
         const {
           delayMs = 100,
           waitForReady = true,
-          onProgress
+          onProgress,
+          executionData = {} // { stepName, stepId, etc. }
         } = options
 
         const state = get()
@@ -1307,6 +1309,17 @@ const useSerialStore = create(
           .filter(l => l.length > 0 && !l.startsWith(';') && !l.startsWith('#'))
 
         let sent = 0
+
+        // Create abort controller for this execution
+        currentExecutionAbortController = new AbortController()
+
+        // Start execution tracking
+        if (executionData.stepName) {
+          get().startExecution({
+            ...executionData,
+            totalCommands: lines.length
+          })
+        }
 
         const awaitOk = () => new Promise((resolve, reject) => {
           if (!waitForOk) return resolve()
@@ -1346,6 +1359,12 @@ const useSerialStore = create(
         set({ isStreamingProgram: true }, false, 'startProgramStream')
         try {
           for (let i = 0; i < lines.length; i++) {
+            // Check if execution was aborted
+            if (currentExecutionAbortController?.signal.aborted) {
+              appendSerialLog('G-code execution aborted by user', 'warn')
+              throw new Error('Execution aborted by user')
+            }
+
             // Use sendCommandWithWait to respect printer busy state
             await sendCommandWithWait(lines[i], { waitForReady: waitForReady })
             if (delayMs) await new Promise(r => setTimeout(r, delayMs))
@@ -1356,11 +1375,31 @@ const useSerialStore = create(
               console.warn(`G-code line ${i + 1}/${lines.length} timeout/error: ${lines[i]}`, e.message)
             }
             sent = i + 1
+            
+            // Update global execution progress
+            if (executionData.stepName) {
+              get().updateExecutionProgress({ sent, total: lines.length })
+            }
+            
             if (typeof onProgress === 'function') onProgress(sent, lines.length)
           }
-          return { sent, total: lines.length }
+          const result = { sent, total: lines.length }
+          
+          // Complete execution tracking
+          if (executionData.stepName) {
+            get().completeExecution(result)
+          }
+          
+          return result
+        } catch (error) {
+          // Cancel execution tracking on error
+          if (executionData.stepName) {
+            get().cancelExecution()
+          }
+          throw error
         } finally {
           set({ isStreamingProgram: false }, false, 'endProgramStream')
+          currentExecutionAbortController = null
         }
       }
 
@@ -1587,6 +1626,10 @@ const useSerialStore = create(
         // Log cleanup
         logCleanupInterval: null,
         isStreamingProgram: false,
+        
+        // Global execution tracking for calibration workflow
+        activeExecution: null, // { id, type, stepName, progress: { sent, total }, startTime, status }
+        executionHistory: [], // Array of completed executions
 
         // Actions
         setPort: (port) => set({ port }, false, 'setPort'),
@@ -1779,7 +1822,89 @@ const useSerialStore = create(
         // Enhanced configuration functions are available as store methods
         sendBulkConfiguration,
         parseConfigurationResponse,
-        emergencyStop
+        emergencyStop,
+        
+        // Execution tracking actions
+        startExecution: (executionData) => set({ 
+          activeExecution: {
+            id: Date.now().toString(),
+            type: 'calibration',
+            stepName: executionData.stepName,
+            progress: { sent: 0, total: executionData.totalCommands },
+            startTime: Date.now(),
+            status: 'running',
+            ...executionData
+          }
+        }, false, 'startExecution'),
+        
+        updateExecutionProgress: (progress) => set((state) => ({
+          activeExecution: state.activeExecution ? {
+            ...state.activeExecution,
+            progress: { ...state.activeExecution.progress, ...progress }
+          } : null
+        }), false, 'updateExecutionProgress'),
+        
+        completeExecution: (result) => set((state) => {
+          const completedExecution = state.activeExecution ? {
+            ...state.activeExecution,
+            status: 'completed',
+            endTime: Date.now(),
+            result
+          } : null
+          
+          return {
+            activeExecution: null,
+            executionHistory: completedExecution ? 
+              [...state.executionHistory, completedExecution].slice(-10) : // Keep last 10 executions
+              state.executionHistory
+          }
+        }, false, 'completeExecution'),
+        
+        abortExecution: async () => {
+          // Abort the current execution
+          if (currentExecutionAbortController) {
+            currentExecutionAbortController.abort()
+          }
+          
+          // Send emergency stop to printer
+          try {
+            await emergencyStop()
+          } catch (error) {
+            console.error('Failed to send emergency stop:', error)
+          }
+          
+          // Cancel execution tracking
+          const state = get()
+          const cancelledExecution = state.activeExecution ? {
+            ...state.activeExecution,
+            status: 'cancelled',
+            endTime: Date.now()
+          } : null
+          
+          set({
+            activeExecution: null,
+            executionHistory: cancelledExecution ? 
+              [...state.executionHistory, cancelledExecution].slice(-10) :
+              state.executionHistory
+          }, false, 'abortExecution')
+        },
+        
+        cancelExecution: () => set((state) => {
+          const cancelledExecution = state.activeExecution ? {
+            ...state.activeExecution,
+            status: 'cancelled',
+            endTime: Date.now()
+          } : null
+          
+          return {
+            activeExecution: null,
+            executionHistory: cancelledExecution ? 
+              [...state.executionHistory, cancelledExecution].slice(-10) :
+              state.executionHistory
+          }
+        }, false, 'cancelExecution'),
+        
+        clearExecutionHistory: () => set({ executionHistory: [] }, false, 'clearExecutionHistory')
       }
     })), 
     {

@@ -1,9 +1,26 @@
 /**
  * Parameter tracking system for calibration workflow
  * Tracks parameters used in each calibration step and saves them to printer settings
+ * Handles global parameters that persist across all calibration steps
  */
 
 import useSerialStore from '../stores/serialStore'
+
+// Global parameters that should persist across all calibration steps
+const GLOBAL_PARAMETERS = {
+  hotendTemp: 200,
+  bedTemp: 60,
+  nozzleDiameter: 0.4,
+  layerHeight: 0.2,
+  printSpeed: 50,
+  retractionDistance: 5,
+  retractionSpeed: 45,
+  primeSpeed: 45,
+  flowRate: 100,
+  wallThickness: 0.4,
+  enableABL: true,
+  firstLayerSpeed: 20
+}
 
 // Default parameter values based on common printer configurations
 const DEFAULT_PARAMETERS = {
@@ -269,4 +286,79 @@ export const importParameterHistory = (file) => {
     reader.onerror = reject
     reader.readAsText(file)
   })
+}
+
+// Get printer-specific global parameter storage key
+const getGlobalKey = (printerId) => `printer_${printerId}_global_parameters`
+
+/**
+ * Load global parameters for a printer
+ */
+export const loadGlobalParameters = (printerId) => {
+  try {
+    const saved = localStorage.getItem(getGlobalKey(printerId))
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      return { ...GLOBAL_PARAMETERS, ...parsed }
+    }
+    return { ...GLOBAL_PARAMETERS }
+  } catch (error) {
+    console.error('Error loading global parameters:', error)
+    return { ...GLOBAL_PARAMETERS }
+  }
+}
+
+/**
+ * Save global parameters for a printer
+ */
+export const saveGlobalParameters = (printerId, parameters) => {
+  try {
+    // Only save parameters that are in the global parameters list
+    const globalParams = {}
+    Object.keys(GLOBAL_PARAMETERS).forEach(key => {
+      if (parameters[key] !== undefined) {
+        globalParams[key] = parameters[key]
+      }
+    })
+    
+    localStorage.setItem(getGlobalKey(printerId), JSON.stringify(globalParams))
+    console.log('Saved global parameters for printer', printerId, ':', globalParams)
+  } catch (error) {
+    console.error('Error saving global parameters:', error)
+  }
+}
+
+/**
+ * Get merged parameters for a step (global + step-specific)
+ */
+export const getMergedParameters = (printerId, stepId, stepParameters = {}) => {
+  const globalParams = loadGlobalParameters(printerId)
+  const stepDefaults = getDefaultParameters(stepId)
+  
+  // Merge: stepParameters > globalParams > stepDefaults
+  return {
+    ...stepDefaults,
+    ...globalParams,
+    ...stepParameters
+  }
+}
+
+/**
+ * Update global parameters when step parameters change
+ */
+export const updateGlobalParameters = (printerId, stepId, parameters) => {
+  const globalParams = loadGlobalParameters(printerId)
+  const updatedGlobalParams = { ...globalParams }
+  
+  // Update global parameters with any matching keys from step parameters
+  Object.keys(GLOBAL_PARAMETERS).forEach(key => {
+    if (parameters[key] !== undefined) {
+      updatedGlobalParams[key] = parameters[key]
+    }
+  })
+  
+  // Save updated global parameters
+  saveGlobalParameters(printerId, updatedGlobalParams)
+  
+  return updatedGlobalParams
 }

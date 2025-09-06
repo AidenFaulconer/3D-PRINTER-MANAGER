@@ -140,12 +140,19 @@ const GcodeViewer3D = ({ content, width = 800, height = 600 }) => {
   // Initialize worker
   useEffect(() => {
     const initWorker = async () => {
-      workerRef.current = await new GcodeGeometryWorker()
+      try {
+        console.log('GcodeViewer3D: Initializing worker...')
+        workerRef.current = await new GcodeGeometryWorker()
+        console.log('GcodeViewer3D: Worker initialized successfully')
+      } catch (error) {
+        console.error('GcodeViewer3D: Error initializing worker:', error)
+      }
     }
     initWorker()
 
     return () => {
       if (workerRef.current) {
+        console.log('GcodeViewer3D: Terminating worker')
         worker.terminate()
       }
     }
@@ -154,19 +161,25 @@ const GcodeViewer3D = ({ content, width = 800, height = 600 }) => {
   // Process G-code when content changes
   useEffect(() => {
     const processGcode = async () => {
-      if (!content || !workerRef.current) return
+      console.log('GcodeViewer3D: Processing G-code, content length:', content?.length, 'worker ready:', !!workerRef.current)
+      if (!content || !workerRef.current) {
+        console.log('GcodeViewer3D: Missing content or worker, skipping processing')
+        return
+      }
 
       setIsProcessing(true)
       try {
+        console.log('GcodeViewer3D: Starting G-code processing...')
         const result = await workerRef.current.convertToGeometry(content, {
           sampleRate: 1,
           simplifyThreshold: 0.1,
           maxPoints: 1000000
         })
+        console.log('GcodeViewer3D: Processing complete, result:', result)
         setGeometryData(result)
         setCurrentLayer(result.layers.length - 1) // Show all layers initially
       } catch (error) {
-        console.error('Error processing G-code:', error)
+        console.error('GcodeViewer3D: Error processing G-code:', error)
       } finally {
         setIsProcessing(false)
       }
@@ -190,6 +203,18 @@ const GcodeViewer3D = ({ content, width = 800, height = 600 }) => {
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
           <span>Processing G-code...</span>
+        </div>
+      </div>
+    )
+  }
+
+  // Fallback if no geometry data
+  if (!geometryData) {
+    return (
+      <div className="flex items-center justify-center" style={{ width, height }}>
+        <div className="text-center">
+          <div className="text-gray-500 mb-2">No G-code data to visualize</div>
+          <div className="text-sm text-gray-400">Generate G-code first to see 3D preview</div>
         </div>
       </div>
     )

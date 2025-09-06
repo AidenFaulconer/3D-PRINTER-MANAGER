@@ -15,40 +15,51 @@ export default defineConfig({
     }
   },
   resolve: {
-    dedupe: ['three', '@react-three/fiber', '@react-three/drei'],
+    dedupe: ['three', '@react-three/fiber', '@react-three/drei', 'react', 'react-dom'],
     alias: {
       'react': 'react',
       'react-dom': 'react-dom'
     }
   },
+  esbuild: {
+    jsx: 'automatic'
+  },
   optimizeDeps: {
     include: [
+      'react',
+      'react-dom',
+      'zustand',
       'three',
       '@react-three/fiber',
       '@react-three/drei/core/OrbitControls',
       '@react-three/drei/core/Line',
       '@react-three/drei/core/Grid',
       '@react-three/drei/core/PerspectiveCamera',
-      '@react-three/drei/core/Stats'
+      '@react-three/drei/core/Stats',
+      'comlink'
     ],
     exclude: ['@react-three/fiber']
   },
   build: {
     commonjsOptions: {
-      include: [/three/, /drei/, /fiber/]
+      include: [/three/, /drei/, /fiber/, /zustand/],
+      transformMixedEsModules: true
     },
     rollupOptions: {
       external: [],
       output: {
         manualChunks: {
-          three: ['three'],
+          'react-vendor': ['react', 'react-dom'],
+          'state-management': ['zustand'],
+          'three': ['three'],
           'react-three': ['@react-three/fiber', '@react-three/drei']
         }
       }
     }
   },
   define: {
-    'process.env.NODE_ENV': '"production"'
+    'process.env.NODE_ENV': '"production"',
+    'global': 'globalThis'
   },
   server: {
     watch: {

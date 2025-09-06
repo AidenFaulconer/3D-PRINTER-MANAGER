@@ -5,6 +5,7 @@ import PrinterDashboard from './components/PrinterDashboard'
 import PrinterLayout from './components/PrinterLayout'
 import PrinterControlPage from './pages/PrinterControlPage'
 import CalibrationWorkflow from './components/CalibrationWorkflow'
+import GlobalExecutionStatus from './components/GlobalExecutionStatus'
 import { ThemeProvider } from './context/ThemeContext'
 
 // Simple router
@@ -74,6 +75,7 @@ function App() {
   return (
     <ThemeProvider>
       {renderContent()}
+      <GlobalExecutionStatus />
     </ThemeProvider>
   )
 }

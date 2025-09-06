@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import { 
   Play, 
   Pause, 
@@ -13,7 +13,9 @@ import {
   Clock,
   Thermometer,
   Ruler,
-  Zap
+  Zap,
+  FileText,
+  Box
 } from 'lucide-react'
 import useSerialStore from '../stores/serialStore'
 import { calibrationSteps } from '../data/calibrationSteps'
@@ -26,9 +28,31 @@ import {
   getBestParameters,
   getParameterHistory,
   clearParameterHistory,
-  exportParameterHistory
+  exportParameterHistory,
+  loadGlobalParameters,
+  saveGlobalParameters,
+  getMergedParameters,
+  updateGlobalParameters
 } from '../utils/ParameterTracker'
+
+// Import GLOBAL_PARAMETERS for UI indicators
+const GLOBAL_PARAMETERS = {
+  hotendTemp: true,
+  bedTemp: true,
+  nozzleDiameter: true,
+  layerHeight: true,
+  printSpeed: true,
+  retractionDistance: true,
+  retractionSpeed: true,
+  primeSpeed: true,
+  flowRate: true,
+  wallThickness: true,
+  enableABL: true,
+  firstLayerSpeed: true
+}
 import TemperatureChart from './controls/TemperatureChart'
+import { GcodeViewer3D } from './GcodeViewer3D'
+import { SimpleGcodeViewer3D } from './SimpleGcodeViewer3D'
 
 const CalibrationWorkflow = () => {
   // Persistent state management using sessionStorage
@@ -44,13 +68,14 @@ const CalibrationWorkflow = () => {
     const saved = sessionStorage.getItem('calibration_stepState')
     return saved || 'config'
   })
-  const [parameters, setParameters] = useState(() => {
-    const saved = sessionStorage.getItem('calibration_parameters')
-    return saved ? JSON.parse(saved) : {}
-  })
+  const [parameters, setParameters] = useState({})
   const [generatedGcode, setGeneratedGcode] = useState(() => {
     const saved = sessionStorage.getItem('calibration_generatedGcode')
     return saved || ''
+  })
+  const [gcodeViewMode, setGcodeViewMode] = useState(() => {
+    const saved = sessionStorage.getItem('calibration_gcodeViewMode')
+    return saved || '3d' // 'text' or '3d'
   })
   const [executionProgress, setExecutionProgress] = useState(() => {
     const saved = sessionStorage.getItem('calibration_executionProgress')
@@ -65,12 +90,18 @@ const CalibrationWorkflow = () => {
     return saved ? JSON.parse(saved) : {}
   })
   const [isConnected, setIsConnected] = useState(false)
+  const [globalParams, setGlobalParams] = useState({})
+  
+  // Ref to track if parameters have been initialized for current step
+  const initializedStepRef = useRef(null)
 
   // Serial store subscriptions
   const status = useSerialStore(state => state.status)
   const sendGcodeProgram = useSerialStore(state => state.sendGcodeProgram)
   const temperatures = useSerialStore(state => state.temperatures)
   const position = useSerialStore(state => state.position)
+  const activeExecution = useSerialStore(state => state.activeExecution)
+  const activePrinter = useSerialStore(state => state.activePrinter)
 
   const currentStep = calibrationSteps[currentStepIndex]
   const isLastStep = currentStepIndex === calibrationSteps.length - 1
@@ -90,7 +121,10 @@ const CalibrationWorkflow = () => {
   }, [stepState])
 
   useEffect(() => {
-    sessionStorage.setItem('calibration_parameters', JSON.stringify(parameters))
+    // Only persist parameters if we're not in the middle of initializing
+    if (Object.keys(parameters).length > 0) {
+      sessionStorage.setItem('calibration_parameters', JSON.stringify(parameters))
+    }
   }, [parameters])
 
   useEffect(() => {
@@ -109,35 +143,81 @@ const CalibrationWorkflow = () => {
     sessionStorage.setItem('calibration_workflowResults', JSON.stringify(workflowResults))
   }, [workflowResults])
 
-  // Initialize parameters for current step
   useEffect(() => {
-    if (currentStep) {
+    sessionStorage.setItem('calibration_gcodeViewMode', gcodeViewMode)
+  }, [gcodeViewMode])
+
+  // Load global parameters when printer changes
+  useEffect(() => {
+    if (activePrinter?.id) {
+      const globalParams = loadGlobalParameters(activePrinter.id)
+      setGlobalParams(globalParams)
+      console.log('Loaded global parameters for display:', globalParams)
+    }
+  }, [activePrinter?.id])
+
+  // Initialize parameters for current step (only when step changes)
+  useEffect(() => {
+    if (currentStep && initializedStepRef.current !== currentStep.id && activePrinter?.id) {
+      console.log('Initializing parameters for step:', currentStep.id, 'printer:', activePrinter.id, 'current parameters:', parameters)
       const initializeParameters = async () => {
         try {
-          // Try to load from printer settings first
+          // Check sessionStorage first for this step's parameters
+          const savedParams = sessionStorage.getItem('calibration_parameters')
+          let sessionParams = {}
+          if (savedParams) {
+            try {
+              sessionParams = JSON.parse(savedParams)
+            } catch (e) {
+              console.warn('Failed to parse saved parameters:', e)
+            }
+          }
+          
+          // Load global parameters for this printer
+          const globalParams = loadGlobalParameters(activePrinter.id)
+          console.log('Loaded global parameters:', globalParams)
+          
+          // Try to load from printer settings
           const loadedParams = await loadParametersFromSettings(currentStep.id)
           
-          // Merge with step defaults
+          // Create merged parameters: sessionStorage > global > printer settings > defaults
           const initialParams = {}
           currentStep.inputs?.forEach(input => {
-            initialParams[input.key] = loadedParams[input.key] || input.defaultValue || ''
+            initialParams[input.key] = sessionParams[input.key] || 
+                                     globalParams[input.key] || 
+                                     loadedParams[input.key] || 
+                                     input.defaultValue || ''
           })
           
-          setParameters(prev => ({ ...prev, ...initialParams }))
+          // Only update if we have inputs for this step and parameters aren't already set
+          if (currentStep.inputs && currentStep.inputs.length > 0) {
+            console.log('Setting initial parameters:', initialParams)
+            setParameters(prev => {
+              // Only update if we don't already have parameters for this step
+              if (Object.keys(prev).length === 0 || initializedStepRef.current !== currentStep.id) {
+                return initialParams
+              }
+              return prev
+            })
+            initializedStepRef.current = currentStep.id
+          }
         } catch (error) {
           console.error('Error loading parameters:', error)
-          // Fall back to defaults
+          // Fall back to global parameters + defaults
+          const globalParams = loadGlobalParameters(activePrinter.id)
           const initialParams = {}
           currentStep.inputs?.forEach(input => {
-            initialParams[input.key] = input.defaultValue || ''
+            initialParams[input.key] = globalParams[input.key] || input.defaultValue || ''
           })
-          setParameters(prev => ({ ...prev, ...initialParams }))
+          console.log('Setting fallback parameters:', initialParams)
+          setParameters(initialParams)
+          initializedStepRef.current = currentStep.id
         }
       }
       
       initializeParameters()
     }
-  }, [currentStepIndex])
+  }, [currentStepIndex, activePrinter?.id]) // Run when step or printer changes
 
   // Generate G-code when parameters change
   useEffect(() => {
@@ -161,10 +241,42 @@ const CalibrationWorkflow = () => {
   }
 
   const handleParameterChange = (key, value) => {
-    setParameters(prev => ({
-      ...prev,
-      [key]: value
-    }))
+    console.log('Parameter change:', key, 'from', parameters[key], 'to', value, 'step:', currentStep?.id)
+    
+    // Convert value to appropriate type
+    let processedValue = value
+    if (value === '') {
+      processedValue = ''
+    } else if (currentStep.inputs) {
+      const inputDef = currentStep.inputs.find(input => input.key === key)
+      if (inputDef?.type === 'number') {
+        processedValue = parseFloat(value) || 0
+      }
+    }
+    
+    console.log('Processed value:', processedValue, 'for key:', key)
+    
+    setParameters(prev => {
+      const newParams = {
+        ...prev,
+        [key]: processedValue
+      }
+      console.log('Setting new parameters:', newParams, 'previous:', prev)
+      
+      // Update global parameters if this is a global parameter
+      if (activePrinter?.id && Object.keys(GLOBAL_PARAMETERS).includes(key)) {
+        console.log('Updating global parameter:', key, 'to', processedValue)
+        updateGlobalParameters(activePrinter.id, currentStep.id, { [key]: processedValue })
+        
+        // Update local global params state for immediate UI update
+        setGlobalParams(prevGlobal => ({
+          ...prevGlobal,
+          [key]: processedValue
+        }))
+      }
+      
+      return newParams
+    })
   }
 
   const startStep = async () => {
@@ -181,6 +293,11 @@ const CalibrationWorkflow = () => {
       const result = await sendGcodeProgram(generatedGcode, {
         delayMs: 100,
         waitForReady: true,
+        executionData: {
+          stepName: currentStep.name,
+          stepId: currentStep.id,
+          workflowId: `calibration-${Date.now()}`
+        },
         onProgress: (sent, total) => {
           setExecutionProgress({ sent, total })
         }
@@ -205,11 +322,19 @@ const CalibrationWorkflow = () => {
     }
   }
 
-  const cancelExecution = () => {
-    if (confirm('Are you sure you want to cancel the current calibration execution?')) {
-      setStepState('config')
-      setWorkflowState('idle')
-      setExecutionProgress({ sent: 0, total: 0 })
+  const abortExecution = useSerialStore(state => state.abortExecution)
+  
+  const handleAbort = async () => {
+    if (confirm('Are you sure you want to abort the current calibration execution? This will send an emergency stop to the printer.')) {
+      try {
+        await abortExecution()
+        setStepState('config')
+        setWorkflowState('idle')
+        setExecutionProgress({ sent: 0, total: 0 })
+      } catch (error) {
+        console.error('Failed to abort execution:', error)
+        alert('Failed to abort execution: ' + error.message)
+      }
     }
   }
 
@@ -230,6 +355,12 @@ const CalibrationWorkflow = () => {
 
     // Save parameter history
     saveParameterHistory(currentStep.id, parameters, stepResult)
+
+    // Update global parameters for this printer
+    if (activePrinter?.id) {
+      updateGlobalParameters(activePrinter.id, currentStep.id, parameters)
+      console.log('Updated global parameters for printer:', activePrinter.id)
+    }
 
     // Save parameters to printer settings if step requires it
     if (currentStep.requiresSave) {
@@ -301,6 +432,7 @@ const CalibrationWorkflow = () => {
     sessionStorage.removeItem('calibration_workflowResults')
   }
 
+
   // Recovery mechanism for interrupted executions
   useEffect(() => {
     const checkForInterruptedExecution = () => {
@@ -347,6 +479,23 @@ const CalibrationWorkflow = () => {
   useEffect(() => {
     setIsConnected(status === 'connected')
   }, [status])
+
+  // Sync with global execution state
+  useEffect(() => {
+    if (activeExecution && activeExecution.status === 'running') {
+      // If there's an active execution and we're not in running state, sync
+      if (stepState !== 'running') {
+        setStepState('running')
+        setWorkflowState('running')
+        setExecutionProgress(activeExecution.progress)
+      }
+    } else if (!activeExecution && stepState === 'running') {
+      // If there's no active execution but we think we're running, reset
+      setStepState('config')
+      setWorkflowState('idle')
+      setExecutionProgress({ sent: 0, total: 0 })
+    }
+  }, [activeExecution])
 
   const getStepIcon = (stepId) => {
     const icons = {
@@ -447,10 +596,10 @@ const CalibrationWorkflow = () => {
                 />
               </div>
               <button
-                onClick={cancelExecution}
+                onClick={handleAbort}
                 className="mt-2 px-3 py-1 bg-red-100 text-red-800 rounded hover:bg-red-200 text-xs"
               >
-                Cancel
+                Abort (Emergency Stop)
               </button>
             </div>
           </div>
@@ -547,57 +696,151 @@ const CalibrationWorkflow = () => {
             )}
           </div>
 
+
           {/* Step Content */}
           {stepState === 'config' && (
             <div className="space-y-6">
+
               {/* Parameters */}
               {currentStep.inputs && currentStep.inputs.length > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {currentStep.inputs.map(input => (
+                  {currentStep.inputs.map(input => {
+                    const isGlobalParam = Object.keys(GLOBAL_PARAMETERS).includes(input.key)
+                    return (
                     <div key={input.key} className="space-y-2">
                       <label className="block text-sm font-medium text-gray-700">
                         {input.label}
                         {input.required && <span className="text-red-500 ml-1">*</span>}
+                        {isGlobalParam && (
+                          <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                            Global
+                          </span>
+                        )}
                       </label>
                       <input
+                        key={`${input.key}-${parameters[input.key]}`}
                         type={input.type}
-                        value={parameters[input.key] || ''}
-                        onChange={(e) => handleParameterChange(input.key, e.target.value)}
+                        value={parameters[input.key] ?? ''}
+                        onChange={(e) => {
+                          console.log('Input change detected:', input.key, 'value:', e.target.value, 'current parameters:', parameters)
+                          handleParameterChange(input.key, e.target.value)
+                        }}
                         min={input.min}
                         max={input.max}
                         step={input.step}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 transition-colors ${
+                          isGlobalParam 
+                            ? 'border-blue-300 focus:ring-blue-500 bg-blue-50' 
+                            : 'border-gray-300 focus:ring-blue-500'
+                        }`}
                         placeholder={input.placeholder}
+                        disabled={stepState !== 'config'}
+                        style={{ 
+                          backgroundColor: stepState !== 'config' ? '#f3f4f6' : (isGlobalParam ? '#eff6ff' : 'white'),
+                          cursor: stepState !== 'config' ? 'not-allowed' : 'text'
+                        }}
                       />
                       {input.description && (
                         <p className="text-xs text-gray-500">{input.description}</p>
                       )}
-              </div>
-            ))}
+                    </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* Global Parameters Display */}
+              {activePrinter?.id && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <h3 className="font-medium text-blue-900 mb-3 flex items-center gap-2">
+                    <Settings className="w-4 h-4" />
+                    Global Parameters for {activePrinter.name || activePrinter.id}
+                  </h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                    {Object.entries(globalParams).map(([key, value]) => (
+                      <div key={key} className="flex justify-between items-center">
+                        <span className="text-blue-700 font-medium">{key}:</span>
+                        <span className="text-blue-900 font-mono">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-blue-600 mt-2">
+                    These parameters persist across all calibration steps and are saved per printer.
+                  </p>
                 </div>
               )}
 
               {/* Generated G-code Preview */}
               {generatedGcode && (
-                <div className="space-y-2">
-                  <h3 className="font-medium text-gray-700">Generated G-code:</h3>
-                  <div className="bg-gray-900 text-green-400 p-4 rounded font-mono text-sm max-h-40 overflow-y-auto">
-                    <pre>{generatedGcode}</pre>
-          </div>
-        </div>
-      )}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-medium text-gray-700">Generated G-code:</h3>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => setGcodeViewMode('text')}
+                        className={`px-3 py-1 rounded text-sm flex items-center space-x-1 ${
+                          gcodeViewMode === 'text' 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                      >
+                        <FileText className="w-4 h-4" />
+                        <span>Text View</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          console.log('Switching to 3D view, current mode:', gcodeViewMode)
+                          setGcodeViewMode('3d')
+                        }}
+                        className={`px-3 py-1 rounded text-sm flex items-center space-x-1 ${
+                          gcodeViewMode === '3d' 
+                            ? 'bg-blue-600 text-white' 
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                      >
+                        <Box className="w-4 h-4" />
+                        <span>3D View</span>
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {gcodeViewMode === 'text' ? (
+                    <div className="bg-gray-900 text-green-400 p-4 rounded font-mono text-sm max-h-40 overflow-y-auto">
+                      <pre>{generatedGcode}</pre>
+                    </div>
+                  ) : (
+                    <div className="border border-gray-300 rounded-lg overflow-hidden">
+                      {console.log('Rendering 3D view, gcodeViewMode:', gcodeViewMode, 'generatedGcode length:', generatedGcode?.length)}
+                      <SimpleGcodeViewer3D 
+                        content={generatedGcode} 
+                        width="100%" 
+                        height={600}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
-              {/* Start Button */}
-              <div className="flex justify-end">
-          <button
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3">
+                {stepState === 'running' && (
+                  <button
+                    onClick={handleAbort}
+                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center gap-2"
+                  >
+                    <X className="w-4 h-4" />
+                    Abort (Emergency Stop)
+                  </button>
+                )}
+                <button
                   onClick={startStep}
                   disabled={!isConnected || !generatedGcode}
                   className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
-          >
+                >
                   <Play className="w-4 h-4" />
                   Start Calibration
-          </button>
-        </div>
+                </button>
+              </div>
             </div>
           )}
 
