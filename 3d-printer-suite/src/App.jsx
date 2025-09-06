@@ -67,6 +67,8 @@ function App() {
       case 'calibration':
         return <CalibrationWorkflow />
 
+      case 'bed-leveling':
+        return <CalibrationWorkflow />
 
       default:
         return <PrinterDashboard onPrinterSelect={handlePrinterSelect} />

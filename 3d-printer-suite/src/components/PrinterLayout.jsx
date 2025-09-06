@@ -57,13 +57,6 @@ const PrinterLayout = memo(({ onBackToDashboard }) => {
       component: () => window.location.href = '#/calibration'
     },
     {
-      id: 'bed-leveling',
-      name: 'Bed Leveling',
-      icon: Ruler,
-      description: 'Probe bed surface and analyze flatness',
-      component: () => window.location.href = '#/bed-leveling'
-    },
-    {
       id: 'config',
       name: 'Printer Configuration',
       icon: Settings,

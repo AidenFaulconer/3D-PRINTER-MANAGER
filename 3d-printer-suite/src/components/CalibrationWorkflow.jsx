@@ -68,8 +68,16 @@ import { GcodeViewer3D } from './GcodeViewer3D'
 import { SimpleGcodeViewer3D } from './SimpleGcodeViewer3D'
 
 const CalibrationWorkflow = () => {
+  // Check if we're coming from bed-leveling route
+  const isBedLevelingRoute = window.location.hash === '#/bed-leveling'
+  
   // Persistent state management using sessionStorage
   const [currentStepIndex, setCurrentStepIndex] = useState(() => {
+    if (isBedLevelingRoute) {
+      // Find bed leveling step index
+      const bedLevelingIndex = workflowSteps.findIndex(step => step.id === 'bed-leveling')
+      return bedLevelingIndex >= 0 ? bedLevelingIndex : 0
+    }
     const saved = sessionStorage.getItem('calibration_currentStepIndex')
     return saved ? parseInt(saved) : 0
   })
