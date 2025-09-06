@@ -11,14 +11,12 @@ export const useActivePrinter = () => usePrintersStore(state => {
   return activePrinter
 })
 
-// Printer management actions
-export const usePrinterActions = () => usePrintersStore(state => ({
-  addPrinter: state.addPrinter,
-  updatePrinter: state.updatePrinter,
-  deletePrinter: state.deletePrinter,
-  setActivePrinter: state.setActivePrinter,
-  resetStore: state.resetStore
-}))
+// Printer management actions - use individual selectors to avoid object creation
+export const useAddPrinter = () => usePrintersStore(state => state.addPrinter)
+export const useUpdatePrinter = () => usePrintersStore(state => state.updatePrinter)
+export const useDeletePrinter = () => usePrintersStore(state => state.deletePrinter)
+export const useSetActivePrinter = () => usePrintersStore(state => state.setActivePrinter)
+export const useResetPrintersStore = () => usePrintersStore(state => state.resetStore)
 
 // Printer settings selectors
 export const usePrinterSettings = (printerId) => usePrintersStore(state => {
@@ -26,8 +24,6 @@ export const usePrinterSettings = (printerId) => usePrintersStore(state => {
   return printer?.printerSettings || null
 })
 
-export const useUpdatePrinter = () => usePrintersStore(state => state.updatePrinter)
-export const useSetActivePrinter = () => usePrintersStore(state => state.setActivePrinter)
 export const useUpdatePrinterSettings = () => usePrintersStore(state => state.updatePrinterSettings)
 
 // Calibration selectors
@@ -44,13 +40,11 @@ export const useIssues = (printerId) => usePrintersStore(state => {
   return printer?.issues || []
 })
 
-export const useIssueActions = () => usePrintersStore(state => ({
-  addIssue: state.addIssue,
-  updateIssue: state.updateIssue,
-  deleteIssue: state.deleteIssue,
-  addFollowUpAction: state.addFollowUpAction,
-  updateFollowUpAction: state.updateFollowUpAction
-}))
+export const useAddIssue = () => usePrintersStore(state => state.addIssue)
+export const useUpdateIssue = () => usePrintersStore(state => state.updateIssue)
+export const useDeleteIssue = () => usePrintersStore(state => state.deleteIssue)
+export const useAddFollowUpAction = () => usePrintersStore(state => state.addFollowUpAction)
+export const useUpdateFollowUpAction = () => usePrintersStore(state => state.updateFollowUpAction)
 
 // Profile management selectors
 export const useProfiles = (printerId) => usePrintersStore(state => {
@@ -63,8 +57,14 @@ export const useMaterials = (printerId) => usePrintersStore(state => {
   return printer?.slicerProfiles?.materials || []
 })
 
+export const useAddProfile = () => usePrintersStore(state => state.addProfile)
 export const useUpdateProfile = () => usePrintersStore(state => state.updateProfile)
+export const useDeleteProfile = () => usePrintersStore(state => state.deleteProfile)
+export const useDuplicateProfile = () => usePrintersStore(state => state.duplicateProfile)
+export const useSetActiveProfile = () => usePrintersStore(state => state.setActiveProfile)
+export const useRevertProfileToVersion = () => usePrintersStore(state => state.revertProfileToVersion)
 
+// Legacy object-returning selector for backward compatibility
 export const useProfileActions = () => usePrintersStore(state => ({
   addProfile: state.addProfile,
   updateProfile: state.updateProfile,
@@ -74,6 +74,12 @@ export const useProfileActions = () => usePrintersStore(state => ({
   revertProfileToVersion: state.revertProfileToVersion
 }))
 
+export const useAddMaterial = () => usePrintersStore(state => state.addMaterial)
+export const useUpdateMaterial = () => usePrintersStore(state => state.updateMaterial)
+export const useDeleteMaterial = () => usePrintersStore(state => state.deleteMaterial)
+export const useSetProfileMaterial = () => usePrintersStore(state => state.setProfileMaterial)
+
+// Legacy object-returning selector for backward compatibility
 export const useMaterialActions = () => usePrintersStore(state => ({
   addMaterial: state.addMaterial,
   updateMaterial: state.updateMaterial,
@@ -87,11 +93,9 @@ export const useMacros = (printerId) => usePrintersStore(state => {
   return printer?.macros || []
 })
 
-export const useMacroActions = () => usePrintersStore(state => ({
-  addMacro: state.addMacro,
-  updateMacro: state.updateMacro,
-  deleteMacro: state.deleteMacro
-}))
+export const useAddMacro = () => usePrintersStore(state => state.addMacro)
+export const useUpdateMacro = () => usePrintersStore(state => state.updateMacro)
+export const useDeleteMacro = () => usePrintersStore(state => state.deleteMacro)
 
 // Configuration management selectors
 export const useConfigurationSnapshots = (printerId) => usePrintersStore(state => {
@@ -99,14 +103,12 @@ export const useConfigurationSnapshots = (printerId) => usePrintersStore(state =
   return printer?.configurationSnapshots || []
 })
 
-export const useConfigurationActions = () => usePrintersStore(state => ({
-  createConfigurationSnapshot: state.createConfigurationSnapshot,
-  restoreConfigurationSnapshot: state.restoreConfigurationSnapshot,
-  deleteConfigurationSnapshot: state.deleteConfigurationSnapshot,
-  exportConfiguration: state.exportConfiguration,
-  importConfiguration: state.importConfiguration,
-  compareConfigurations: state.compareConfigurations
-}))
+export const useCreateConfigurationSnapshot = () => usePrintersStore(state => state.createConfigurationSnapshot)
+export const useRestoreConfigurationSnapshot = () => usePrintersStore(state => state.restoreConfigurationSnapshot)
+export const useDeleteConfigurationSnapshot = () => usePrintersStore(state => state.deleteConfigurationSnapshot)
+export const useExportConfiguration = () => usePrintersStore(state => state.exportConfiguration)
+export const useImportConfiguration = () => usePrintersStore(state => state.importConfiguration)
+export const useCompareConfigurations = () => usePrintersStore(state => state.compareConfigurations)
 
 // Utility selectors
 export const useGetActivePrinter = () => usePrintersStore(state => state.getActivePrinter)

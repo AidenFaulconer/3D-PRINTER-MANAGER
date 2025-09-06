@@ -12,13 +12,34 @@ const BedLevelVisualization = React.memo(() => {
 
   // Use stored bed mesh data or show placeholder
   const bedData = useMemo(() => {
-    if (bedMesh.data.length > 0) {
-      return {
-        mesh: bedMesh.data,
-        gridSize: bedMesh.gridSize,
-        min: bedMesh.min,
-        max: bedMesh.max,
-        range: bedMesh.range
+    if (bedMesh.data && bedMesh.data.length > 0) {
+      // Ensure mesh data is a proper 2D array
+      let mesh = bedMesh.data
+      
+      // If mesh is a flat array, convert it to 2D based on grid size
+      if (Array.isArray(mesh) && mesh.length > 0 && !Array.isArray(mesh[0])) {
+        const gridSize = bedMesh.gridSize || { x: 5, y: 5 }
+        const rows = []
+        for (let y = 0; y < gridSize.y; y++) {
+          const row = []
+          for (let x = 0; x < gridSize.x; x++) {
+            const index = y * gridSize.x + x
+            row.push(mesh[index] || 0)
+          }
+          rows.push(row)
+        }
+        mesh = rows
+      }
+      
+      // Validate that mesh is a proper 2D array
+      if (Array.isArray(mesh) && mesh.length > 0 && Array.isArray(mesh[0])) {
+        return {
+          mesh: mesh,
+          gridSize: bedMesh.gridSize || { x: mesh[0].length, y: mesh.length },
+          min: bedMesh.min || Math.min(...mesh.flat()),
+          max: bedMesh.max || Math.max(...mesh.flat()),
+          range: bedMesh.range || (Math.max(...mesh.flat()) - Math.min(...mesh.flat()))
+        }
       }
     }
     
@@ -38,10 +59,13 @@ const BedLevelVisualization = React.memo(() => {
     }
   }, [bedMesh])
 
-  const maxDeviation = Math.max(...bedData.mesh.flat().map(Math.abs))
-  const minDeviation = Math.min(...bedData.mesh.flat())
+  const maxDeviation = bedData.mesh && Array.isArray(bedData.mesh) ? 
+    Math.max(...bedData.mesh.flat().map(Math.abs)) : 0
+  const minDeviation = bedData.mesh && Array.isArray(bedData.mesh) ? 
+    Math.min(...bedData.mesh.flat()) : 0
 
   const getColor = (value) => {
+    if (maxDeviation === minDeviation) return 'bg-gray-500'
     const normalized = (value - minDeviation) / (maxDeviation - minDeviation)
     if (normalized < 0.33) return 'bg-green-500'
     if (normalized < 0.66) return 'bg-yellow-500'
@@ -117,8 +141,8 @@ const BedLevelVisualization = React.memo(() => {
               gridTemplateRows: `repeat(${bedData.gridSize.y}, minmax(0, 1fr))`
             }}
           >
-            {bedData.mesh.map((row, rowIndex) =>
-              row.map((value, colIndex) => (
+            {bedData.mesh && Array.isArray(bedData.mesh) && bedData.mesh.map((row, rowIndex) =>
+              Array.isArray(row) && row.map((value, colIndex) => (
                 <div
                   key={`${rowIndex}-${colIndex}`}
                   className={`h-8 w-8 rounded border flex items-center justify-center text-xs text-white font-mono ${getColor(value)}`}

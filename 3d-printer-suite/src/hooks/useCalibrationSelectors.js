@@ -95,4 +95,4 @@ export const useCalibrationStatistics = () => useCalibrationStore(state => {
 export const useGetCalibrationFile = () => useCalibrationStore(state => state.getCalibrationFile)
 export const useGetCalibrationResult = () => useCalibrationStore(state => state.getCalibrationResult)
 export const useGetWorkflow = () => useCalibrationStore(state => state.getWorkflow)
-export const useResetStore = () => useCalibrationStore(state => state.resetStore)
+export const useResetCalibrationStore = () => useCalibrationStore(state => state.resetStore)

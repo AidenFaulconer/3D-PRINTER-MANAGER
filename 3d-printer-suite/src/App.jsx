@@ -5,7 +5,6 @@ import PrinterDashboard from './components/PrinterDashboard'
 import PrinterLayout from './components/PrinterLayout'
 import PrinterControlPage from './pages/PrinterControlPage'
 import CalibrationWorkflow from './components/CalibrationWorkflow'
-import BedLevelingStep from './components/BedLevelingStep'
 import GlobalExecutionStatus from './components/GlobalExecutionStatus'
 import { ThemeProvider } from './context/ThemeContext'
 
@@ -68,8 +67,6 @@ function App() {
       case 'calibration':
         return <CalibrationWorkflow />
 
-      case 'bed-leveling':
-        return <BedLevelingStep />
 
       default:
         return <PrinterDashboard onPrinterSelect={handlePrinterSelect} />

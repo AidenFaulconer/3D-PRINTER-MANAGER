@@ -196,4 +196,4 @@ export const useBulkActions = () => useAdvancedQueueStore(state => ({
 // Utility selectors
 export const useGetNextPrintable = () => useAdvancedQueueStore(state => state.getNextPrintable)
 export const useRecalculateQueueTimes = () => useAdvancedQueueStore(state => state.recalculateQueueTimes)
-export const useResetStore = () => useAdvancedQueueStore(state => state.resetStore)
+export const useResetAdvancedQueueStore = () => useAdvancedQueueStore(state => state.resetStore)

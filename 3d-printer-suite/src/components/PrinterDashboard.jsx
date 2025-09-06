@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Plus, Printer, CheckCircle, Circle, Settings, Trash2, Database } from 'lucide-react'
-import { usePrinters, usePrinterActions } from '../hooks/useStoreSelectors'
+import { usePrinters, useAddPrinter, useDeletePrinter, useSetActivePrinter, useResetPrintersStore } from '../hooks/useStoreSelectors'
 import { samplePrinters } from '../data/samplePrinters'
 import Logo from './Logo'
 import ThemeToggle from './ThemeToggle'
@@ -15,7 +15,10 @@ const PrinterDashboard = ({ onPrinterSelect }) => {
   })
 
   const printers = usePrinters()
-  const { addPrinter, deletePrinter, setActivePrinter, resetStore } = usePrinterActions()
+  const addPrinter = useAddPrinter()
+  const deletePrinter = useDeletePrinter()
+  const setActivePrinter = useSetActivePrinter()
+  const resetStore = useResetPrintersStore()
 
   // Predefined options for dropdowns
   const printerModels = [

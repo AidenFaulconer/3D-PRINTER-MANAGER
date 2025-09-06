@@ -120,4 +120,4 @@ export const useShortestPrint = () => usePrintHistoryStore(state =>
 // Utility selectors
 export const useGetPrintRecord = () => usePrintHistoryStore(state => state.getPrintRecord)
 export const useGetStatistics = () => usePrintHistoryStore(state => state.getStatistics)
-export const useResetStore = () => usePrintHistoryStore(state => state.resetStore)
+export const useResetPrintHistoryStore = () => usePrintHistoryStore(state => state.resetStore)

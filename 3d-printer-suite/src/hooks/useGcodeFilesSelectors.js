@@ -85,4 +85,4 @@ export const useFileStatistics = () => useGcodeFilesStore(state => {
 // Utility selectors
 export const useGetFile = () => useGcodeFilesStore(state => state.getFile)
 export const useGetQueueItem = () => useGcodeFilesStore(state => state.getQueueItem)
-export const useResetStore = () => useGcodeFilesStore(state => state.resetStore)
+export const useResetGcodeFilesStore = () => useGcodeFilesStore(state => state.resetStore)

@@ -19,6 +19,19 @@ import {
 } from 'lucide-react'
 import useSerialStore from '../stores/serialStore'
 import { calibrationSteps } from '../data/calibrationSteps'
+
+// Create custom workflow with bed leveling as first step
+const createWorkflowSteps = () => {
+  const bedLevelingStep = calibrationSteps.find(step => step.id === 'bed-leveling')
+  const otherSteps = calibrationSteps.filter(step => step.id !== 'bed-leveling')
+  
+  if (bedLevelingStep) {
+    return [bedLevelingStep, ...otherSteps]
+  }
+  return calibrationSteps
+}
+
+const workflowSteps = createWorkflowSteps()
 import { generateParameterizedGcode } from '../utils/GcodeParameterizer'
 import { 
   getDefaultParameters, 
@@ -103,8 +116,8 @@ const CalibrationWorkflow = () => {
   const activeExecution = useSerialStore(state => state.activeExecution)
   const activePrinter = useSerialStore(state => state.activePrinter)
 
-  const currentStep = calibrationSteps[currentStepIndex]
-  const isLastStep = currentStepIndex === calibrationSteps.length - 1
+  const currentStep = workflowSteps[currentStepIndex]
+  const isLastStep = currentStepIndex === workflowSteps.length - 1
   const isFirstStep = currentStepIndex === 0
 
   // Persist state changes to sessionStorage
@@ -514,7 +527,7 @@ const CalibrationWorkflow = () => {
   const getStepStatus = (stepId) => {
     if (workflowResults[stepId]?.completed) return 'completed'
     if (stepResults[stepId]) return 'review'
-    if (currentStepIndex > calibrationSteps.findIndex(s => s.id === stepId)) return 'pending'
+    if (currentStepIndex > workflowSteps.findIndex(s => s.id === stepId)) return 'pending'
     return 'current'
   }
 
@@ -639,7 +652,7 @@ const CalibrationWorkflow = () => {
 
         {/* Progress Steps */}
         <div className="flex items-center justify-between mb-6">
-          {calibrationSteps.map((step, index) => {
+          {workflowSteps.map((step, index) => {
             const Icon = getStepIcon(step.id)
             const status = getStepStatus(step.id)
             const isCurrent = index === currentStepIndex
@@ -662,7 +675,7 @@ const CalibrationWorkflow = () => {
                      isCurrent ? 'Current' : 'Pending'}
                   </div>
                   </div>
-                {index < calibrationSteps.length - 1 && (
+                {index < workflowSteps.length - 1 && (
                   <ArrowRight className="w-4 h-4 text-gray-400 mx-4" />
                     )}
                   </div>
@@ -677,7 +690,7 @@ const CalibrationWorkflow = () => {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold">{currentStep.name}</h2>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">Step {currentStepIndex + 1} of {calibrationSteps.length}</span>
+              <span className="text-sm text-gray-500">Step {currentStepIndex + 1} of {workflowSteps.length}</span>
                 </div>
           </div>
 
