@@ -7,6 +7,127 @@ import { generateParameterizedGcode, getStepParameters } from '../utils/GcodePar
 
 export const calibrationSteps = [
   {
+    id: 'bed-leveling',
+    title: 'Bed Leveling',
+    name: 'Bed Leveling',
+    description: 'Probe the bed surface and analyze flatness to ensure proper first layer adhesion',
+    category: 'Movement',
+    requiresSave: true,
+    videoUrl: 'https://www.youtube.com/watch?v=Kj4x1P1R3sE',
+    instructions: [
+      'Ensure your printer has a bed leveling probe (BLTouch, inductive sensor, etc.)',
+      'Clear the bed surface of any debris or residue',
+      'Make sure the bed is at room temperature',
+      'Run the bed leveling sequence (G29)',
+      'Analyze the mesh data for flatness and variation',
+      'Adjust bed screws or probe offset if needed'
+    ],
+    visualAids: [],
+    commonIssues: [
+      { issue: 'Bed not flat enough', solution: 'Adjust bed screws, check for warped bed, or use manual leveling first' },
+      { issue: 'Probe not triggering', solution: 'Check probe wiring, adjust trigger distance, or clean probe tip' },
+      { issue: 'Inconsistent readings', solution: 'Check probe mounting, ensure stable bed temperature, clean bed surface' }
+    ],
+    expectedOutcomes: 'Bed flatness within ±0.1mm variation across the entire surface',
+    checklist: [
+      'Bed leveling probe installed and calibrated',
+      'Bed surface clean and free of debris',
+      'Bed at room temperature',
+      'Probe trigger distance properly set',
+      'No obstructions in probe path'
+    ],
+    inputs: [
+      {
+        type: 'number',
+        label: 'Probe Speed (mm/min)',
+        key: 'probeSpeed',
+        defaultValue: 300,
+        min: 100,
+        max: 1000,
+        step: 50,
+        required: true
+      },
+      {
+        type: 'number',
+        label: 'Probe Grid Size',
+        key: 'gridSize',
+        defaultValue: 5,
+        min: 3,
+        max: 9,
+        step: 1,
+        required: true
+      },
+      {
+        type: 'number',
+        label: 'Probe Z-Offset (mm)',
+        key: 'probeZOffset',
+        defaultValue: 0,
+        min: -5,
+        max: 5,
+        step: 0.01,
+        required: true
+      },
+      {
+        type: 'checkbox',
+        label: 'Enable Bed Heating',
+        key: 'enableBedHeating',
+        defaultValue: true
+      },
+      {
+        type: 'number',
+        label: 'Bed Temperature (°C)',
+        key: 'bedTemp',
+        defaultValue: 60,
+        min: 0,
+        max: 120,
+        step: 5,
+        required: true
+      }
+    ],
+    gcode: (inputValues) => {
+      const { probeSpeed, gridSize, probeZOffset, enableBedHeating, bedTemp } = inputValues
+      let gcode = `; Bed Leveling Calibration\n`
+      gcode += `; Grid size: ${gridSize}x${gridSize}, Probe speed: ${probeSpeed}mm/min\n`
+      gcode += `; Z-offset: ${probeZOffset}mm\n`
+      gcode += `G90\n`
+      gcode += `M82\n`
+      gcode += `; Home all axes\n`
+      gcode += `G28\n`
+      
+      if (enableBedHeating) {
+        gcode += `; Heat bed to ${bedTemp}°C for consistent probing\n`
+        gcode += `M140 S${bedTemp}\n`
+        gcode += `M190 S${bedTemp}\n`
+      }
+      
+      gcode += `; Set probe speed\n`
+      gcode += `M203 Z${probeSpeed}\n`
+      gcode += `; Set probe Z-offset\n`
+      gcode += `M851 Z${probeZOffset}\n`
+      gcode += `; Save probe settings\n`
+      gcode += `M500\n`
+      gcode += `; Enable bed leveling\n`
+      gcode += `M420 S1\n`
+      gcode += `; Run bed leveling (G29)\n`
+      gcode += `G29\n`
+      gcode += `; Get mesh data\n`
+      gcode += `M420 V\n`
+      gcode += `; Move to center for inspection\n`
+      gcode += `G0 X110 Y110 Z5\n`
+      gcode += `; Move up for safety\n`
+      gcode += `G0 Z20\n`
+      
+      if (enableBedHeating) {
+        gcode += `; Turn off bed heater\n`
+        gcode += `M140 S0\n`
+      }
+      
+      gcode += `M84\n`
+      
+      return gcode
+    }
+  },
+  {
     id: 'pid-autotune',
     title: 'PID Autotune',
     name: 'PID Autotune',

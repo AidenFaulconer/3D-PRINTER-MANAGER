@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Edit, Save, X, Printer, Settings, Ruler, Thermometer, Grid, Info, AlertTriangle, CheckCircle } from 'lucide-react'
 import usePrintersStore from '../stores/printersStore'
 import useSerialStore from '../stores/serialStore'
@@ -11,20 +11,14 @@ const PrinterConfig = () => {
   const [activeSection, setActiveSection] = useState('basic') // 'basic', 'bedLevel', 'config'
   const { updatePrinter } = usePrintersStore()
   
+  // Get active printer ID first
+  const activePrinterId = usePrintersStore(state => state.activePrinterId)
+  
   // Only subscribe to the specific printer data we need for this component
   const printerData = usePrintersStore(state => {
-    const activePrinter = state.printers.find(p => p.id === state.activePrinterId)
+    const activePrinter = state.printers.find(p => p.id === activePrinterId)
     if (!activePrinter) return null
-    return {
-      id: activePrinter.id,
-      name: activePrinter.name,
-      model: activePrinter.model,
-      firmware: activePrinter.firmware,
-      bedSize: activePrinter.bedSize,
-      firmwareConfiguration: activePrinter.firmwareConfiguration,
-      calibrationSteps: activePrinter.calibrationSteps,
-      lastUpdated: activePrinter.lastUpdated
-    }
+    return activePrinter
   })
   
   // Bed leveling functionality
@@ -34,9 +28,8 @@ const PrinterConfig = () => {
   const runBedLeveling = useSerialStore(state => state.runBedLeveling)
   const processCollectedBedMeshData = useSerialStore(state => state.processCollectedBedMeshData)
 
-  const activePrinterId = usePrintersStore(state => state.activePrinterId)
   const printerSettings = usePrintersStore(state => {
-    const activePrinter = state.printers.find(p => p.id === state.activePrinterId)
+    const activePrinter = state.printers.find(p => p.id === activePrinterId)
     return activePrinter?.printerSettings
   })
 

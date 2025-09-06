@@ -3,9 +3,10 @@ import { Settings, Edit3 } from 'lucide-react'
 import usePrintersStore from '../stores/printersStore'
 
 const PrinterSettingsDisplay = memo(() => {
+  const activePrinterId = usePrintersStore(state => state.activePrinterId)
   const printerSettings = usePrintersStore(state => {
-    const activePrinter = state.printers.find(p => p.id === state.activePrinterId)
-    console.log('PrinterSettingsDisplay: activePrinterId:', state.activePrinterId)
+    const activePrinter = state.printers.find(p => p.id === activePrinterId)
+    console.log('PrinterSettingsDisplay: activePrinterId:', activePrinterId)
     console.log('PrinterSettingsDisplay: activePrinter:', activePrinter)
     console.log('PrinterSettingsDisplay: printerSettings:', activePrinter?.printerSettings)
     return activePrinter?.printerSettings
