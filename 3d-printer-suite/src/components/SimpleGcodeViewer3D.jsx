@@ -153,6 +153,40 @@ const Scene = ({ geometryData, visibleLayers, showTravelMoves, buildPlateSize })
           rotation={[-Math.PI / 2, 0, 0]}
         />
         
+        {/* Build plate outline for test cube */}
+        <mesh position={[0, 0, 0.01]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[buildPlateSize.x, buildPlateSize.y]} />
+          <meshBasicMaterial color="#f0f0f0" transparent opacity={0.1} />
+        </mesh>
+        
+        {/* Build plate border for test cube */}
+        <group position={[0, 0, 0.02]}>
+          <lineSegments>
+            <bufferGeometry>
+              <bufferAttribute
+                attach="attributes-position"
+                count={8}
+                array={new Float32Array([
+                  // Bottom edge
+                  -buildPlateSize.x/2, -buildPlateSize.y/2, 0,
+                  buildPlateSize.x/2, -buildPlateSize.y/2, 0,
+                  // Right edge  
+                  buildPlateSize.x/2, -buildPlateSize.y/2, 0,
+                  buildPlateSize.x/2, buildPlateSize.y/2, 0,
+                  // Top edge
+                  buildPlateSize.x/2, buildPlateSize.y/2, 0,
+                  -buildPlateSize.x/2, buildPlateSize.y/2, 0,
+                  // Left edge
+                  -buildPlateSize.x/2, buildPlateSize.y/2, 0,
+                  -buildPlateSize.x/2, -buildPlateSize.y/2, 0,
+                ])}
+                itemSize={3}
+              />
+            </bufferGeometry>
+            <lineBasicMaterial color="#666666" />
+          </lineSegments>
+        </group>
+        
         {/* Colored XYZ Axes */}
         <mesh position={[-4, 4, 0]}>
           <cylinderGeometry args={[0.02, 0.02, 1.5, 8]} />
@@ -201,12 +235,64 @@ const Scene = ({ geometryData, visibleLayers, showTravelMoves, buildPlateSize })
 
   return (
     <>
-      {/* Grid lines on the bed plane (Z=0) - sized to build plate */}
-      <gridHelper 
-        args={[buildPlateSize.x, Math.max(10, Math.floor(buildPlateSize.x / 10)), '#cccccc', '#cccccc']} 
-        position={[0, 0, 0]} 
-        rotation={[-Math.PI / 2, 0, 0]}
-      />
+      {/* Calculate grid and bed positioning based on G-code bounds */}
+      {(() => {
+        const { min, max } = geometryData.bounds
+        const centerX = (min.x + max.x) / 2
+        const centerY = (min.y + max.y) / 2
+        
+        // Use the larger of G-code bounds or build plate size
+        const gcodeSizeX = max.x - min.x
+        const gcodeSizeY = max.y - min.y
+        const gridSizeX = Math.max(gcodeSizeX, buildPlateSize.x)
+        const gridSizeY = Math.max(gcodeSizeY, buildPlateSize.y)
+        
+        return (
+          <>
+            {/* Grid lines positioned to match G-code bounds */}
+            <gridHelper 
+              args={[gridSizeX, Math.max(10, Math.floor(gridSizeX / 10)), '#cccccc', '#cccccc']} 
+              position={[centerX, centerY, 0]} 
+              rotation={[-Math.PI / 2, 0, 0]}
+            />
+            
+            {/* Build plate outline positioned to match G-code center */}
+            <mesh position={[centerX, centerY, 0.01]} rotation={[-Math.PI / 2, 0, 0]}>
+              <planeGeometry args={[buildPlateSize.x, buildPlateSize.y]} />
+              <meshBasicMaterial color="#f0f0f0" transparent opacity={0.1} />
+            </mesh>
+            
+            {/* Build plate border positioned to match G-code center */}
+            <group position={[centerX, centerY, 0.02]}>
+              {/* Create border lines manually to ensure proper orientation */}
+              <lineSegments>
+                <bufferGeometry>
+                  <bufferAttribute
+                    attach="attributes-position"
+                    count={8}
+                    array={new Float32Array([
+                      // Bottom edge
+                      -buildPlateSize.x/2, -buildPlateSize.y/2, 0,
+                      buildPlateSize.x/2, -buildPlateSize.y/2, 0,
+                      // Right edge  
+                      buildPlateSize.x/2, -buildPlateSize.y/2, 0,
+                      buildPlateSize.x/2, buildPlateSize.y/2, 0,
+                      // Top edge
+                      buildPlateSize.x/2, buildPlateSize.y/2, 0,
+                      -buildPlateSize.x/2, buildPlateSize.y/2, 0,
+                      // Left edge
+                      -buildPlateSize.x/2, buildPlateSize.y/2, 0,
+                      -buildPlateSize.x/2, -buildPlateSize.y/2, 0,
+                    ])}
+                    itemSize={3}
+                  />
+                </bufferGeometry>
+                <lineBasicMaterial color="#666666" />
+              </lineSegments>
+            </group>
+          </>
+        )
+      })()}
       
       {/* Colored XYZ Axes - Positioned at top-left corner like bed mesh */}
       {/* X Axis - Red */}
@@ -301,7 +387,7 @@ const SimpleGcodeViewer3D = ({ content, width = 800, height = 700, buildPlateSiz
   const [isProcessing, setIsProcessing] = useState(false)
   const [currentLayer, setCurrentLayer] = useState(0)
   const [showTravelMoves, setShowTravelMoves] = useState(true)
-  const [cameraPosition, setCameraPosition] = useState([30, 30, 15])
+  const [cameraPosition, setCameraPosition] = useState([0, 0, 50])
   const [qualityLevel, setQualityLevel] = useState('medium') // 'low', 'medium', 'high'
   const [maxPointsPerLayer, setMaxPointsPerLayer] = useState(1000)
 
@@ -338,28 +424,37 @@ const SimpleGcodeViewer3D = ({ content, width = 800, height = 700, buildPlateSiz
         setGeometryData(result)
         setCurrentLayer(result.layers.length - 1) // Show all layers initially
         
-        // Calculate optimal camera position based on bounds
+        // Calculate optimal camera position for birds-eye view
         if (result.bounds) {
           const { min, max } = result.bounds
+          
+          // Calculate the center of the G-code
           const centerX = (min.x + max.x) / 2
           const centerY = (min.y + max.y) / 2
           const centerZ = (min.z + max.z) / 2
           
-          // Calculate distance needed to see the entire object
+          // Calculate the size of the G-code
           const sizeX = max.x - min.x
           const sizeY = max.y - min.y
           const sizeZ = max.z - min.z
           const maxSize = Math.max(sizeX, sizeY, sizeZ)
           
-          // Position camera closer and at a better angle to see the object clearly
-          const distance = Math.max(maxSize * 1.5, 20) // Closer distance, minimum 20 units
+          // Calculate distance for birds-eye view (from corner)
+          // Use the larger of G-code size or build plate size for proper scaling
+          const buildPlateMax = Math.max(buildPlateSize.x, buildPlateSize.y)
+          const effectiveSize = Math.max(maxSize, buildPlateMax)
+          const distance = Math.max(effectiveSize * 1.2, 30)
+          
+          // Position camera at corner for birds-eye view
+          // Offset to corner: move away from center in both X and Y
+          const cornerOffset = effectiveSize * 0.6
           const newCameraPosition = [
-            centerX + distance * 0.5,
-            centerY + distance * 0.5,
-            centerZ + distance * 0.3
+            centerX + cornerOffset,  // Move to corner
+            centerY + cornerOffset,  // Move to corner  
+            centerZ + distance * 0.6 // Higher Z for birds-eye view
           ]
           
-          console.log('Setting camera position:', newCameraPosition, 'for bounds:', result.bounds)
+          console.log('Setting camera position:', newCameraPosition, 'for bounds:', result.bounds, 'buildPlateSize:', buildPlateSize)
           setCameraPosition(newCameraPosition)
         }
       } catch (error) {
@@ -417,8 +512,8 @@ const SimpleGcodeViewer3D = ({ content, width = 800, height = 700, buildPlateSiz
               (geometryData.bounds.min.y + geometryData.bounds.max.y) / 2,
               (geometryData.bounds.min.z + geometryData.bounds.max.z) / 2
             ] : [0, 0, 0]}
-            minDistance={10}
-            maxDistance={200}
+            minDistance={5}
+            maxDistance={500}
             enableZoom={true}
             enablePan={true}
             enableRotate={true}
@@ -469,15 +564,23 @@ const SimpleGcodeViewer3D = ({ content, width = 800, height = 700, buildPlateSiz
                     const centerX = (min.x + max.x) / 2
                     const centerY = (min.y + max.y) / 2
                     const centerZ = (min.z + max.z) / 2
+                    
                     const sizeX = max.x - min.x
                     const sizeY = max.y - min.y
                     const sizeZ = max.z - min.z
                     const maxSize = Math.max(sizeX, sizeY, sizeZ)
-                    const distance = Math.max(maxSize * 1.5, 20)
+                    
+                    // Use the larger of G-code size or build plate size for proper scaling
+                    const buildPlateMax = Math.max(buildPlateSize.x, buildPlateSize.y)
+                    const effectiveSize = Math.max(maxSize, buildPlateMax)
+                    const distance = Math.max(effectiveSize * 1.2, 30)
+                    
+                    // Position camera at corner for birds-eye view
+                    const cornerOffset = effectiveSize * 0.6
                     setCameraPosition([
-                      centerX + distance * 0.5,
-                      centerY + distance * 0.5,
-                      centerZ + distance * 0.3
+                      centerX + cornerOffset,
+                      centerY + cornerOffset,
+                      centerZ + distance * 0.6
                     ])
                   }
                 }}

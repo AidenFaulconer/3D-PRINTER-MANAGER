@@ -16,16 +16,17 @@
     "@reach/tabs": "^0.18.0",
     "@react-three/drei": "^9.92.1",
     "@react-three/fiber": "^8.15.12",
-    "three": "^0.159.0",
     "@types/three": "^0.159.0",
     "comlink": "^4.4.1",
     "lucide-react": "^0.263.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.8.1",
+    "three": "^0.159.0",
     "zustand": "^4.5.7"
   },
   "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.6",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
     "@vitejs/plugin-react": "^4.0.0",

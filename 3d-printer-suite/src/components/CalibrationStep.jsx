@@ -82,6 +82,7 @@ const ControlSection = memo(({
 }) => {
   // Get only the serial state we need directly from the store
   const serialStatus = useSerialStore(state => state.status)
+  const activePrinter = usePrintersStore(state => state.printers.find(p => p.id === activePrinterId))
 
   return (
     <>
@@ -294,6 +295,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
   
   // Only subscribe to the specific data we need to prevent unnecessary re-renders
   const activePrinterId = usePrintersStore(state => state.activePrinterId)
+  const activePrinter = usePrintersStore(state => state.printers.find(p => p.id === state.activePrinterId))
   const hasActivePrinter = usePrintersStore(state => !!state.printers.find(p => p.id === state.activePrinterId))
   const calibrationStepData = usePrintersStore(state => {
     const activePrinter = state.printers.find(p => p.id === state.activePrinterId)
