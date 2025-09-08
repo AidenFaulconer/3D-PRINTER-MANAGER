@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "deploy": "yarn build && touch dist/.nojekyll && npx gh-pages -d dist"
   },
   "dependencies": {
     "@reach/tabs": "^0.18.0",
