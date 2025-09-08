@@ -9,12 +9,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:pages": "node scripts/build-for-github-pages.js && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",
-    "deploy": "yarn build && touch dist/.nojekyll && npx gh-pages -d dist"
+    "deploy": "yarn build:pages && npx gh-pages -d dist -b gh-pages"
   },
   "dependencies": {
     "@reach/tabs": "^0.18.0",
