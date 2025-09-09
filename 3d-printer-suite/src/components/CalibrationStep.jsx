@@ -210,7 +210,8 @@ const ControlSection = memo(({
     prevProps.execState.running === nextProps.execState.running &&
     prevProps.execState.progress === nextProps.execState.progress &&
     prevProps.showGcode === nextProps.showGcode &&
-    prevProps.generatedGcode === nextProps.generatedGcode
+    prevProps.generatedGcode === nextProps.generatedGcode &&
+    prevProps.renderInput === nextProps.renderInput
   )
 })
 
@@ -469,12 +470,16 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
   }
 
   const handleInputChange = useCallback((key, value) => {
+    console.log(`handleInputChange called: ${key} = ${value}`)
+    
     setInputValues(prev => {
       const newValues = {
         ...prev,
         [key]: value
       }
       inputValuesRef.current = newValues
+      
+      console.log('New input values:', newValues)
       
       // Update global parameters if this is a global parameter
       if (activePrinterId && GLOBAL_PARAMETERS[key]) {
@@ -758,9 +763,12 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
 
   const renderInput = useCallback((input) => {
     const { type, label, key, defaultValue, min, max, step: stepValue, required } = input
-    // Use current inputValues state
+    // Use current inputValues state - ensure we get the most up-to-date value
     const value = inputValues[key] ?? defaultValue
     const isGlobalParam = GLOBAL_PARAMETERS[key]
+
+    // Debug logging to track state changes
+    console.log(`Rendering input ${key}:`, { value, inputValues, defaultValue })
 
     switch (type) {
       case 'checkbox':
@@ -769,8 +777,11 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
             <input
               type="checkbox"
               id={key}
-              checked={value}
-              onChange={(e) => handleInputChange(key, e.target.checked)}
+              checked={!!value}
+              onChange={(e) => {
+                console.log(`Checkbox ${key} changed to:`, e.target.checked)
+                handleInputChange(key, e.target.checked)
+              }}
               className="h-4 w-4 text-blue-50 dark:text-blue-9000 focus:ring-blue-500 border-gray-300 dark:border-gray-600 rounded"
             />
             <label htmlFor={key} className="ml-2 text-sm text-gray-700 dark:text-gray-300">
@@ -798,8 +809,12 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
             <input
               type="number"
               id={key}
-              value={value}
-              onChange={(e) => handleInputChange(key, parseFloat(e.target.value) || 0)}
+              value={value || ''}
+              onChange={(e) => {
+                const newValue = parseFloat(e.target.value) || 0
+                console.log(`Number input ${key} changed to:`, newValue)
+                handleInputChange(key, newValue)
+              }}
               min={min}
               max={max}
               step={stepValue}
@@ -823,8 +838,11 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
             <input
               type="text"
               id={key}
-              value={value}
-              onChange={(e) => handleInputChange(key, e.target.value)}
+              value={value || ''}
+              onChange={(e) => {
+                console.log(`Text input ${key} changed to:`, e.target.value)
+                handleInputChange(key, e.target.value)
+              }}
               required={required}
               className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
@@ -1137,7 +1155,8 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
     prevProps.canProceed === nextProps.canProceed &&
     // prevProps.execState.running === nextProps.execState.running && 
     prevProps.activeTab === nextProps.activeTab && 
-    prevProps.isCompleted === nextProps.isCompleted
+    prevProps.isCompleted === nextProps.isCompleted &&
+    prevProps.step?.id === nextProps.step?.id
   )
 });
 
