@@ -27,12 +27,17 @@ jobs:
       with:
         node-version: '18.5.0'
         cache: 'yarn'
+        cache-dependency-path: '3d-printer-suite/yarn.lock'
         
     - name: Install dependencies
-      run: yarn install
+      run: |
+        cd 3d-printer-suite
+        yarn install
       
     - name: Build
-      run: yarn build:pages
+      run: |
+        cd 3d-printer-suite
+        yarn build:pages
       
     - name: Setup Pages
       uses: actions/configure-pages@v4
@@ -40,7 +45,7 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v3
       with:
-        path: './dist'
+        path: './3d-printer-suite/dist'
 
   deploy:
     environment:
