@@ -1466,6 +1466,22 @@ const useSerialStore = create(
           }
           const result = { sent, total: lines.length }
           
+          // Send print completion commands to clear printer status and return to ready state
+          try {
+            // Send M25 to stop any SD print job and clear printing status
+            await sendCommandWithWait('M25', { waitForReady: false, postSendDelayMs: 0 })
+            // Send M26 to set SD position to 0 (clears any remaining print state)
+            await sendCommandWithWait('M26', { waitForReady: false, postSendDelayMs: 0 })
+            // Send M105 to get final status and confirm printer is ready
+            await sendCommandWithWait('M105', { waitForReady: false, postSendDelayMs: 0 })
+            // Send G28 X Y to home X and Y axes (returns printer to known position)
+            await sendCommandWithWait('G28 X Y', { waitForReady: false, postSendDelayMs: 0 })
+            appendSerialLog('Print job completed - printer returned to ready state', 'info')
+          } catch (e) {
+            // Don't fail the entire job if status clearing fails
+            appendSerialLog('Warning: Could not clear print status', 'warn')
+          }
+          
           // Complete execution tracking
           if (executionData.stepName) {
             get().completeExecution(result)
@@ -1957,13 +1973,18 @@ const useSerialStore = create(
           // Stop any ongoing G-code streaming
           set({ isStreamingProgram: false }, false, 'stopProgramStream')
           
-          // Send emergency stop to printer
+          // Send normal print stop commands to printer
           try {
-            await get().emergencyStop()
-            appendSerialLog('Execution aborted by user', 'warn')
+            // Send M25 to stop any SD print job
+            await get().sendCommand('M25')
+            // Send M26 to reset SD position
+            await get().sendCommand('M26')
+            // Send M105 to get status
+            await get().sendCommand('M105')
+            appendSerialLog('Print job stopped by user', 'warn')
           } catch (error) {
-            console.error('Failed to send emergency stop:', error)
-            appendSerialLog(`Failed to send emergency stop: ${error.message}`, 'err')
+            console.error('Failed to send stop commands:', error)
+            appendSerialLog(`Failed to send stop commands: ${error.message}`, 'err')
           }
           
           // Cancel execution tracking

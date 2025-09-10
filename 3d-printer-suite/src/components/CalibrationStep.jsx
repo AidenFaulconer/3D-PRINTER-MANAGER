@@ -347,6 +347,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
       const globalParams = loadGlobalParameters(activePrinterId)
       setGlobalParams(globalParams)
       console.log('Loaded global parameters for display:', globalParams)
+      console.log('Available global parameters for printer', activePrinterId, ':', globalParams)
     }
   }, [activePrinterId])
 
@@ -550,8 +551,9 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
       
         // Update global parameters if this is a global parameter
         if (activePrinterId && GLOBAL_PARAMETERS[key]) {
-          updateGlobalParameters(activePrinterId, step.id, newValues)
-          console.log('Updated global parameter:', key, '=', value)
+          console.log('Updating global parameter:', key, '=', value, 'for printer:', activePrinterId)
+          const updatedParams = updateGlobalParameters(activePrinterId, step.id, newValues)
+          console.log('Updated global parameters:', updatedParams)
           
           // Update local global params state for immediate UI update
           setGlobalParams(prevGlobal => ({
@@ -960,7 +962,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
           console.log('Store update for global parameter:', key, 'value:', value)
           handleInputChange(key, value)
         }}
-        initialValue={inputValues[key] || defaultValue || ''}
+        initialValue={isGlobalParam ? '' : (inputValues[key] || defaultValue || '')}
         className={isGlobalParam ? 'border-blue-300 bg-blue-50' : ''}
         errorClassName="text-red-600"
       />

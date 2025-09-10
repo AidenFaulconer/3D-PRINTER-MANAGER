@@ -219,6 +219,8 @@ export async function generateParameterizedGcode(stepId, parameters = {}) {
     const value = finalParams[paramKey]
     const placeholder = paramConfig.placeholder
     
+    console.log(`Replacing parameter ${paramKey}: ${placeholder} -> ${value}`)
+    
     if (typeof value === 'boolean') {
       // Handle boolean parameters (like enableABL, restoreABL)
       if (value) {
@@ -231,8 +233,33 @@ export async function generateParameterizedGcode(stepId, parameters = {}) {
     } else {
       // Handle numeric parameters
       const regex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
-      parameterizedGcode = parameterizedGcode.replace(regex, placeholder.replace(/\d+\.?\d*/, value))
+      // Replace the numeric part of the placeholder with the actual value
+      const newValue = placeholder.replace(/\d+\.?\d*/, value)
+      const beforeCount = (parameterizedGcode.match(regex) || []).length
+      parameterizedGcode = parameterizedGcode.replace(regex, newValue)
+      const afterCount = (parameterizedGcode.match(new RegExp(newValue.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length
+      console.log(`  Replaced ${beforeCount} instances, now has ${afterCount} instances of ${newValue}`)
     }
+  }
+  
+  // Post-process the G-code to fix extrusion issues
+  if (stepId === 'first-layer') {
+    // Remove problematic G92 E0.0000 commands that reset extruder position
+    // Keep only the first G92 E0.0000 at the beginning
+    const lines = parameterizedGcode.split('\n')
+    let firstG92Found = false
+    const cleanedLines = lines.filter(line => {
+      if (line.trim() === 'G92 E0.0000') {
+        if (!firstG92Found) {
+          firstG92Found = true
+          return true // Keep the first one
+        }
+        return false // Remove subsequent ones
+      }
+      return true
+    })
+    parameterizedGcode = cleanedLines.join('\n')
+    console.log(`Removed ${lines.length - cleanedLines.length} problematic G92 E0.0000 commands`)
   }
   
   return {
