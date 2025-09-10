@@ -1,6 +1,7 @@
 # Logs
 logs
 *.log
+./3d-printer-suite/scripts/**
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

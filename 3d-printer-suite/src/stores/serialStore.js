@@ -1234,11 +1234,12 @@ const useSerialStore = create(
         }
       }
 
-      // Wait for printer to be ready (not busy)
-      const waitForPrinterReady = async (timeoutMs = 10000) => {
+      // Wait for printer to be ready (not busy) - wait indefinitely until ready
+      const waitForPrinterReady = async (maxWaitMs = 300000) => { // 5 minutes max
         const startTime = Date.now()
+        let lastLogTime = startTime
         
-        while (Date.now() - startTime < timeoutMs) {
+        while (true) {
           const state = get()
           const recentLogs = state.serialLogs.slice(-10) // Check last 10 logs
           
@@ -1251,14 +1252,26 @@ const useSerialStore = create(
             return true // Printer is ready
           }
           
+          // Check for maximum wait time (safety net)
+          const now = Date.now()
+          if (now - startTime > maxWaitMs) {
+            appendSerialLog(`Printer busy for too long (${Math.round(maxWaitMs/1000)}s) - aborting execution`, 'err')
+            throw new Error('Printer busy timeout - execution aborted')
+          }
+          
+          // Log progress every 5 seconds to show we're waiting
+          if (now - lastLogTime > 5000) {
+            const waitTime = Math.round((now - startTime) / 1000)
+            appendSerialLog(`Waiting for printer to be ready... (${waitTime}s)`, 'info')
+            lastLogTime = now
+          }
+          
           // Wait a bit before checking again
           await new Promise(resolve => setTimeout(resolve, 100))
         }
-        
-        return false // Timeout
       }
 
-      // Send command and wait for printer to be ready
+      // Send command and wait for printer to be ready - NEVER skip commands
       const sendCommandWithWait = async (gcode, options = {}) => {
         const { waitForReady = true, maxRetries = 3, retryDelay = 1000 } = options
         
@@ -1272,16 +1285,12 @@ const useSerialStore = create(
           return
         }
 
-        // Wait for printer to be ready if requested
+        // Wait for printer to be ready if requested - wait indefinitely
         if (waitForReady) {
-          const isReady = await waitForPrinterReady()
-          if (!isReady) {
-            appendSerialLog('Printer busy timeout - command skipped', 'warn')
-            return
-          }
+          await waitForPrinterReady() // This will wait indefinitely until ready
         }
 
-        // Send the command
+        // Send the command - this will only execute when printer is ready
         await sendCommand(gcode)
         
         // Wait a bit for the command to be processed
@@ -1365,15 +1374,26 @@ const useSerialStore = create(
               throw new Error('Execution aborted by user')
             }
 
-            // Use sendCommandWithWait to respect printer busy state
-            await sendCommandWithWait(lines[i], { waitForReady: waitForReady })
-            if (delayMs) await new Promise(r => setTimeout(r, delayMs))
-            try { 
-              await awaitOk() 
-              console.log(`G-code line ${i + 1}/${lines.length} acknowledged: ${lines[i]}`)
-            } catch (e) {
-              console.warn(`G-code line ${i + 1}/${lines.length} timeout/error: ${lines[i]}`, e.message)
+            try {
+              // Use sendCommandWithWait to respect printer busy state - this will wait indefinitely
+              await sendCommandWithWait(lines[i], { waitForReady: waitForReady })
+              if (delayMs) await new Promise(r => setTimeout(r, delayMs))
+              
+              try { 
+                await awaitOk() 
+                console.log(`G-code line ${i + 1}/${lines.length} acknowledged: ${lines[i]}`)
+              } catch (e) {
+                console.warn(`G-code line ${i + 1}/${lines.length} timeout/error: ${lines[i]}`, e.message)
+              }
+            } catch (waitError) {
+              // If waiting for printer ready failed (timeout), abort entire execution
+              if (waitError.message.includes('Printer busy timeout')) {
+                appendSerialLog(`G-code execution aborted - printer busy timeout at line ${i + 1}/${lines.length}`, 'err')
+                throw waitError
+              }
+              throw waitError
             }
+            
             sent = i + 1
             
             // Update global execution progress
@@ -1683,6 +1703,7 @@ const useSerialStore = create(
         sendCommands,
         sendCommandWithWait,
         sendCommandsWithWait,
+        emergencyStop,
         waitForPrinterReady,
         sendGcodeProgram,
         fetchBedLevel,
@@ -1822,7 +1843,6 @@ const useSerialStore = create(
         // Enhanced configuration functions are available as store methods
         sendBulkConfiguration,
         parseConfigurationResponse,
-        emergencyStop,
         
         // Execution tracking actions
         startExecution: (executionData) => set({ 
@@ -1861,16 +1881,24 @@ const useSerialStore = create(
         }, false, 'completeExecution'),
         
         abortExecution: async () => {
-          // Abort the current execution
+          console.log('Aborting execution...')
+          
+          // Abort the current execution controller
           if (currentExecutionAbortController) {
             currentExecutionAbortController.abort()
+            currentExecutionAbortController = null
           }
+          
+          // Stop any ongoing G-code streaming
+          set({ isStreamingProgram: false }, false, 'stopProgramStream')
           
           // Send emergency stop to printer
           try {
-            await emergencyStop()
+            await get().emergencyStop()
+            appendSerialLog('Execution aborted by user', 'warn')
           } catch (error) {
             console.error('Failed to send emergency stop:', error)
+            appendSerialLog(`Failed to send emergency stop: ${error.message}`, 'err')
           }
           
           // Cancel execution tracking
@@ -1887,6 +1915,8 @@ const useSerialStore = create(
               [...state.executionHistory, cancelledExecution].slice(-10) :
               state.executionHistory
           }, false, 'abortExecution')
+          
+          console.log('Execution aborted successfully')
         },
         
         cancelExecution: () => set((state) => {

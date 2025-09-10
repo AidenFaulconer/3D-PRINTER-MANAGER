@@ -18,7 +18,9 @@ import {
   Box
 } from 'lucide-react'
 import useSerialStore from '../stores/serialStore'
+import usePrintersStore from '../stores/printersStore'
 import { calibrationSteps } from '../data/calibrationSteps'
+import Input from './Input'
 
 // Create custom workflow with bed leveling as first step
 const createWorkflowSteps = () => {
@@ -259,6 +261,35 @@ const CalibrationWorkflow = () => {
       console.error('Error generating G-code:', error)
       setGeneratedGcode('')
     }
+  }
+
+  const downloadGcode = () => {
+    if (!generatedGcode || !currentStep) return
+
+    // Get printer information
+    const { activePrinterId, printers } = usePrintersStore.getState()
+    const activePrinter = printers.find(p => p.id === activePrinterId)
+    
+    // Generate filename with printer and material info
+    const printerName = activePrinter?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Unknown_Printer'
+    const printerModel = activePrinter?.model?.replace(/[^a-zA-Z0-9]/g, '_') || 'Unknown_Model'
+    const materialType = activePrinter?.printerSettings?.filament?.type?.replace(/[^a-zA-Z0-9]/g, '_') || 'PLA'
+    const stepName = currentStep.title?.replace(/[^a-zA-Z0-9]/g, '_') || 'calibration'
+    
+    // Create filename with timestamp
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-')
+    const filename = `${stepName}_${printerName}_${printerModel}_${materialType}_${timestamp}.gcode`
+    
+    // Create and download file
+    const blob = new Blob([generatedGcode], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
   }
 
   const handleParameterChange = (key, value) => {
@@ -590,10 +621,10 @@ const CalibrationWorkflow = () => {
       {/* Persistent Execution Status Banner */}
       {workflowState === 'running' && stepState === 'running' && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                 <Clock className="w-5 h-5 text-blue-600 animate-spin" />
-                <div>
+                  <div>
                   <h3 className="font-medium text-blue-900">Calibration in Progress</h3>
                   <p className="text-sm text-blue-700">
                     {currentStep?.name} - {executionProgress.sent} / {executionProgress.total} commands sent
@@ -615,16 +646,16 @@ const CalibrationWorkflow = () => {
                   className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${executionProgress.total > 0 ? (executionProgress.sent / executionProgress.total) * 100 : 0}%` }}
                 />
-              </div>
+                  </div>
               <button
                 onClick={handleAbort}
                 className="mt-2 px-3 py-1 bg-red-100 text-red-800 rounded hover:bg-red-200 text-xs"
               >
                 Abort (Emergency Stop)
               </button>
-            </div>
-          </div>
-        </div>
+                  </div>
+                </div>
+              </div>
       )}
 
       {/* Header */}
@@ -642,20 +673,20 @@ const CalibrationWorkflow = () => {
               {workflowState === 'running' && 'Running'}
               {workflowState === 'completed' && 'Completed'}
               {workflowState === 'paused' && 'Paused'}
-            </div>
+          </div>
             {workflowState === 'running' && stepState === 'running' && (
               <div className="flex items-center gap-2 text-sm text-blue-600">
                 <Clock className="w-4 h-4 animate-spin" />
                 <span>Executing G-code...</span>
-              </div>
-            )}
-            <button
+        </div>
+      )}
+          <button
               onClick={resetWorkflow}
               className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
-            >
+          >
               Reset Workflow
-            </button>
-          </div>
+          </button>
+        </div>
         </div>
 
         {/* Progress Steps */}
@@ -699,8 +730,8 @@ const CalibrationWorkflow = () => {
             <h2 className="text-xl font-semibold">{currentStep.name}</h2>
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-500">Step {currentStepIndex + 1} of {workflowSteps.length}</span>
+                  </div>
                 </div>
-          </div>
 
           {/* Step Description */}
           <div className="mb-6">
@@ -727,44 +758,49 @@ const CalibrationWorkflow = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {currentStep.inputs.map(input => {
                     const isGlobalParam = Object.keys(GLOBAL_PARAMETERS).includes(input.key)
+                    
+                    // Validation function for this input
+                    const validateInput = (value) => {
+                      if (input.required && (!value || value === '')) {
+                        return 'This field is required'
+                      }
+                      if (input.type === 'number' && value !== '') {
+                        const numValue = parseFloat(value)
+                        if (isNaN(numValue)) {
+                          return 'Must be a valid number'
+                        }
+                        if (input.min !== undefined && numValue < input.min) {
+                          return `Must be at least ${input.min}`
+                        }
+                        if (input.max !== undefined && numValue > input.max) {
+                          return `Must be at most ${input.max}`
+                        }
+                      }
+                      return true
+                    }
+                    
                     return (
-                    <div key={input.key} className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">
-                        {input.label}
-                        {input.required && <span className="text-red-500 ml-1">*</span>}
-                        {isGlobalParam && (
-                          <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
-                            Global
-                          </span>
-                        )}
-                      </label>
-                      <input
-                        key={`${input.key}-${parameters[input.key]}`}
+                      <Input
+                        key={input.key}
                         type={input.type}
-                        value={parameters[input.key] ?? ''}
-                        onChange={(e) => {
-                          console.log('Input change detected:', input.key, 'value:', e.target.value, 'current parameters:', parameters)
-                          handleParameterChange(input.key, e.target.value)
-                        }}
+                        label={input.label}
+                        placeholder={input.placeholder}
                         min={input.min}
                         max={input.max}
                         step={input.step}
-                        className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 transition-colors ${
-                          isGlobalParam 
-                            ? 'border-blue-300 focus:ring-blue-500 bg-blue-50' 
-                            : 'border-gray-300 focus:ring-blue-500'
-                        }`}
-                        placeholder={input.placeholder}
+                        required={input.required}
                         disabled={stepState !== 'config'}
-                        style={{ 
-                          backgroundColor: stepState !== 'config' ? '#f3f4f6' : (isGlobalParam ? '#eff6ff' : 'white'),
-                          cursor: stepState !== 'config' ? 'not-allowed' : 'text'
+                        validate={validateInput}
+                        syncWithStore={isGlobalParam}
+                        getStoreValue={() => globalParams[input.key]}
+                        onChangeStore={(value) => {
+                          console.log('Store update for global parameter:', input.key, 'value:', value)
+                          handleParameterChange(input.key, value)
                         }}
+                        initialValue={parameters[input.key] || input.defaultValue || ''}
+                        className={isGlobalParam ? 'border-blue-300 bg-blue-50' : ''}
+                        errorClassName="text-red-600"
                       />
-                      {input.description && (
-                        <p className="text-xs text-gray-500">{input.description}</p>
-                      )}
-                    </div>
                     )
                   })}
                 </div>
@@ -796,7 +832,7 @@ const CalibrationWorkflow = () => {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-gray-700">Generated G-code:</h3>
-                    <div className="flex items-center space-x-2">
+                <div className="flex items-center space-x-2">
                       <button
                         onClick={() => setGcodeViewMode('text')}
                         className={`px-3 py-1 rounded text-sm flex items-center space-x-1 ${
@@ -822,13 +858,20 @@ const CalibrationWorkflow = () => {
                         <Box className="w-4 h-4" />
                         <span>3D View</span>
                       </button>
-                    </div>
-                  </div>
-                  
+                    <button
+                        onClick={downloadGcode}
+                        className="px-3 py-1 rounded text-sm flex items-center space-x-1 bg-green-600 text-white hover:bg-green-700"
+                    >
+                        <FileText className="w-4 h-4" />
+                        <span>Download</span>
+                    </button>
+                </div>
+              </div>
+
                   {gcodeViewMode === 'text' ? (
                     <div className="bg-gray-900 text-green-400 p-4 rounded font-mono text-sm max-h-40 overflow-y-auto">
                       <pre>{generatedGcode}</pre>
-                    </div>
+                      </div>
                   ) : (
                     <div className="border border-gray-300 rounded-lg overflow-hidden">
                       {console.log('Rendering 3D view, gcodeViewMode:', gcodeViewMode, 'generatedGcode length:', generatedGcode?.length)}
@@ -862,9 +905,9 @@ const CalibrationWorkflow = () => {
                   <Play className="w-4 h-4" />
                   Start Calibration
                 </button>
-              </div>
-            </div>
-          )}
+                  </div>
+                </div>
+              )}
 
           {stepState === 'running' && (
             <div className="space-y-6">
@@ -882,14 +925,14 @@ const CalibrationWorkflow = () => {
                     className="bg-blue-600 h-3 rounded-full transition-all duration-300"
                     style={{ width: `${executionProgress.total > 0 ? (executionProgress.sent / executionProgress.total) * 100 : 0}%` }}
                   />
-                </div>
+            </div>
                 <div className="text-xs text-gray-600 text-center">
                   {executionProgress.total > 0 ? 
                     `${Math.round((executionProgress.sent / executionProgress.total) * 100)}% complete` : 
                     'Preparing...'
                   }
-                </div>
-              </div>
+        </div>
+      </div>
 
               {/* Temperature Chart */}
               <div className="bg-gray-50 rounded p-4">
@@ -927,7 +970,7 @@ const CalibrationWorkflow = () => {
                     <li key={index}>{check}</li>
                   ))}
                 </ul>
-      </div>
+              </div>
 
               {/* Results Actions */}
               <div className="flex justify-between">
@@ -1001,13 +1044,13 @@ const CalibrationWorkflow = () => {
               >
                 Load Best Parameters
               </button>
-              <button
+                <button
                 onClick={exportParameterHistory}
                 className="px-3 py-1 bg-green-100 text-green-800 rounded hover:bg-green-200 text-sm"
-              >
+                >
                 Export History
-              </button>
-              <button
+                </button>
+                <button
                 onClick={() => {
                   if (confirm('Clear parameter history for this step?')) {
                     clearParameterHistory(currentStep.id)
@@ -1017,8 +1060,8 @@ const CalibrationWorkflow = () => {
                 className="px-3 py-1 bg-red-100 text-red-800 rounded hover:bg-red-200 text-sm"
               >
                 Clear History
-              </button>
-            </div>
+                </button>
+              </div>
           </div>
           
           <div className="space-y-2">

@@ -534,7 +534,7 @@ export const calibrationSteps = [
         key: 'printSpeed',
         defaultValue: 20,
         min: 10,
-        max: 60,
+        max: 175,
         step: 5,
         required: true
       },
@@ -838,7 +838,7 @@ calibrationSteps.push(
       { type: 'number', label: 'Perimeters', key: 'perimeters', defaultValue: 2, min: 1, max: 5, step: 1, required: true },
       { type: 'number', label: 'Top/Bottom Layers', key: 'solidLayers', defaultValue: 4, min: 2, max: 10, step: 1, required: true },
       { type: 'number', label: 'Infill (%)', key: 'infill', defaultValue: 15, min: 0, max: 40, step: 5, required: true },
-      { type: 'number', label: 'Print Speed (mm/s)', key: 'printSpeed', defaultValue: 50, min: 20, max: 120, step: 5, required: true },
+      { type: 'number', label: 'Print Speed (mm/s)', key: 'printSpeed', defaultValue: 50, min: 20, max: 175, step: 5, required: true },
       { type: 'number', label: 'Hotend Temp (°C)', key: 'hotendTemp', defaultValue: 205, min: 170, max: 280, step: 5, required: true },
       { type: 'number', label: 'Bed Temp (°C)', key: 'bedTemp', defaultValue: 60, min: 0, max: 120, step: 5, required: true }
     ],
@@ -944,7 +944,7 @@ calibrationSteps.push(
       'Filament dry and consistent'
     ],
     inputs: [
-      { type: 'number', label: 'Start Speed (mm/s)', key: 'startSpeed', defaultValue: 40, min: 10, max: 150, step: 5, required: true },
+      { type: 'number', label: 'Start Speed (mm/s)', key: 'startSpeed', defaultValue: 40, min: 10, max: 175, step: 5, required: true },
       { type: 'number', label: 'End Speed (mm/s)', key: 'endSpeed', defaultValue: 120, min: 20, max: 300, step: 5, required: true },
       { type: 'number', label: 'Speed Step (mm/s)', key: 'stepSpeed', defaultValue: 10, min: 5, max: 50, step: 5, required: true },
       { type: 'number', label: 'Line Length (mm)', key: 'lineLength', defaultValue: 160, min: 60, max: 220, step: 10, required: true },

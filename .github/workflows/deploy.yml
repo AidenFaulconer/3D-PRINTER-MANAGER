@@ -32,6 +32,9 @@ jobs:
           cache: 'yarn'
           cache-dependency-path: 3d-printer-suite/yarn.lock
 
+      - name: navigate to cwd
+        run: cd 3d-printer-suite 
+  
       - name: Install dependencies
         run: yarn install --frozen-lockfile
 
@@ -40,6 +43,9 @@ jobs:
 
       - name: SPA fallback (copy index.html to 404.html)
         run: cp dist/index.html dist/404.html || true
+
+      - name: copy dist to root
+        run: cp dist ../ 
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

@@ -31,6 +31,7 @@ import TemperatureControl from './controls/TemperatureControl'
 import BedLevelVisualization from './BedLevelVisualization'
 import { GcodeViewer3D } from './GcodeViewer3D'
 import { SimpleGcodeViewer3D } from './SimpleGcodeViewer3D'
+import Input from './Input'
 
 const Tabs = ['Instructions', 'Visuals', 'Configuration', 'Results']
 
@@ -60,6 +61,36 @@ const MonitorSection = memo(() => {
     </div>
   )
 })
+
+// Download G-code function
+const downloadGcode = (generatedGcode, step) => {
+  if (!generatedGcode || !step) return
+
+  // Get printer information
+  const { activePrinterId, printers } = usePrintersStore.getState()
+  const activePrinter = printers.find(p => p.id === activePrinterId)
+  
+  // Generate filename with printer and material info
+  const printerName = activePrinter?.name?.replace(/[^a-zA-Z0-9]/g, '_') || 'Unknown_Printer'
+  const printerModel = activePrinter?.model?.replace(/[^a-zA-Z0-9]/g, '_') || 'Unknown_Model'
+  const materialType = activePrinter?.printerSettings?.filament?.type?.replace(/[^a-zA-Z0-9]/g, '_') || 'PLA'
+  const stepName = step.title?.replace(/[^a-zA-Z0-9]/g, '_') || 'calibration'
+  
+  // Create filename with timestamp
+  const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-')
+  const filename = `${stepName}_${printerName}_${printerModel}_${materialType}_${timestamp}.gcode`
+  
+  // Create and download file
+  const blob = new Blob([generatedGcode], { type: 'text/plain' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
 
 // Separate control section to prevent re-renders
 const ControlSection = memo(({ 
@@ -151,6 +182,7 @@ const ControlSection = memo(({
             <h4 className="font-medium text-gray-900 dark:text-white">Generated G-code</h4>
             <div className="flex items-center gap-2">
               <button onClick={copyGcode} className="px-2 py-1 bg-gray-50 dark:bg-gray-8000 dark:bg-gray-700 rounded text-sm">Copy</button>
+              <button onClick={() => downloadGcode(generatedGcode, step)} className="px-2 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700">Download</button>
               <button onClick={()=>{ const v=!showGcode; setShowGcode(v); try{ if(step?.id){ sessionStorage.setItem(`gcode_show_${step.id}`, v?'1':'0') } } catch{} }} className="px-2 py-1 bg-gray-50 dark:bg-gray-8000 dark:bg-gray-700 rounded text-sm">{showGcode ? 'Hide' : 'Show'}</button>
             </div>
           </div>
@@ -298,6 +330,29 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
   const activePrinterId = usePrintersStore(state => state.activePrinterId)
   const activePrinter = usePrintersStore(state => state.printers.find(p => p.id === state.activePrinterId))
   const hasActivePrinter = usePrintersStore(state => !!state.printers.find(p => p.id === state.activePrinterId))
+
+  // Load global parameters when printer changes
+  useEffect(() => {
+    if (activePrinterId) {
+      const globalParams = loadGlobalParameters(activePrinterId)
+      setGlobalParams(globalParams)
+      console.log('Loaded global parameters for display:', globalParams)
+    }
+  }, [activePrinterId])
+
+  // Cleanup execution state when component unmounts or step changes
+  useEffect(() => {
+    return () => {
+      // Only abort execution if we're actually changing steps, not just navigating away
+      // The execution should continue running globally even when navigating between pages
+      const { activeExecution } = useSerialStore.getState()
+      if (activeExecution && activeExecution.stepId === step.id) {
+        // Don't abort execution when just navigating away - let it continue globally
+        // The GlobalExecutionStatus component will handle showing progress
+        console.log('CalibrationStep unmounting, but keeping execution running globally')
+      }
+    }
+  }, [step.id])
   const calibrationStepData = usePrintersStore(state => {
     const activePrinter = state.printers.find(p => p.id === state.activePrinterId)
     return activePrinter?.calibrationSteps?.[step.id]
@@ -328,8 +383,10 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
   const inputValuesRef = useRef({})
   
   const [inputValues, setInputValues] = useState({})
+  const [inputUpdateCounter, setInputUpdateCounter] = useState(0)
   const [generatedGcode, setGeneratedGcode] = useState('')
   const [isCompleted, setIsCompleted] = useState(false)
+  const [globalParams, setGlobalParams] = useState({})
   const [showGcode, setShowGcode] = useState(false)
   const [gcodeViewMode, setGcodeViewMode] = useState('3d') // 'text' or '3d'
   const [checklist, setChecklist] = useState({})
@@ -481,14 +538,23 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
       
       console.log('New input values:', newValues)
       
-      // Update global parameters if this is a global parameter
-      if (activePrinterId && GLOBAL_PARAMETERS[key]) {
-        updateGlobalParameters(activePrinterId, step.id, newValues)
-        console.log('Updated global parameter:', key, '=', value)
-      }
+        // Update global parameters if this is a global parameter
+        if (activePrinterId && GLOBAL_PARAMETERS[key]) {
+          updateGlobalParameters(activePrinterId, step.id, newValues)
+          console.log('Updated global parameter:', key, '=', value)
+          
+          // Update local global params state for immediate UI update
+          setGlobalParams(prevGlobal => ({
+            ...prevGlobal,
+            [key]: value
+          }))
+        }
       
       return newValues
     })
+    
+    // Force re-render by incrementing counter
+    setInputUpdateCounter(prev => prev + 1)
   }, [activePrinterId, step.id])
 
   const generateGcode = useCallback(async () => {
@@ -582,7 +648,8 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
       progress: 0,
       total: payload.length
     }
-    setExecState(initialState)
+    // Note: Execution state is managed by the global serial store
+    // We don't need to set local state here
     
     try {
       const sendProgram = useSerialStore.getState().sendGcodeProgram
@@ -591,35 +658,94 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
           delayMs: 60,
           waitForOk: true,
           okTimeoutMs: 5000,
-          onProgress: (progress, total) => setExecState(prev => ({ ...(prev || initialState), progress, total }))
+          executionData: {
+            stepName: step.name,
+            stepId: step.id,
+            workflowId: `calibration-${Date.now()}`
+          },
+          onProgress: (progress, total) => {
+            // Progress is handled by the global serial store
+            console.log(`G-code progress: ${progress}/${total}`)
+          }
         })
       } else {
-        // Fallback: line-by-line
-        for (let i = 0; i < payload.length; i++) {
-          const currentState = execState || initialState
-          if (currentState.paused) { i--; await new Promise(r=>setTimeout(r,200)); continue }
-          if (!currentState.running) break
-          await sendCommand(payload[i])
-          setExecState(prev => ({ ...(prev || initialState), progress: i+1 }))
-          await new Promise(r=>setTimeout(r, 60))
+        // Fallback: line-by-line - start execution tracking manually
+        const { startExecution, updateExecutionProgress, completeExecution } = useSerialStore.getState()
+        startExecution({
+          stepName: step.name,
+          stepId: step.id,
+          totalCommands: payload.length,
+          workflowId: `calibration-${Date.now()}`
+        })
+        
+        try {
+          for (let i = 0; i < payload.length; i++) {
+            // Check if execution is still running via global store
+            const currentExecution = useSerialStore.getState().activeExecution
+            if (currentExecution?.status === 'paused') { 
+              i--; 
+              await new Promise(r=>setTimeout(r,200)); 
+              continue 
+            }
+            if (currentExecution?.status !== 'running') {
+              console.log('Execution stopped, breaking out of loop')
+              break
+            }
+            
+            // Check if execution was aborted
+            if (currentExecution?.status === 'cancelled') {
+              console.log('Execution was cancelled, breaking out of loop')
+              break
+            }
+            
+            // Use sendCommandWithWait to ensure we wait for printer to be ready
+            const { sendCommandWithWait } = useSerialStore.getState()
+            await sendCommandWithWait(payload[i], { waitForReady: true })
+            console.log(`Sent line ${i+1}/${payload.length}: ${payload[i]}`)
+            
+            // Update progress
+            updateExecutionProgress({ sent: i + 1, total: payload.length })
+            
+            await new Promise(r=>setTimeout(r, 60))
+          }
+          
+          // Complete execution
+          completeExecution({ success: true })
+        } catch (error) {
+          // Complete execution with error
+          completeExecution({ success: false, error: error.message })
+          throw error
         }
       }
     } finally {
-      setExecState(prev => ({ ...(prev || initialState), running: false }))
+      // Execution state is managed by the global serial store
+      console.log('G-code execution completed')
     }
   }, [serialStatus, sendCommand, generatedGcode, execState, generateGcode])
 
-  const pauseExec = useCallback(() => 
-    setExecState(p => ({ ...p, paused: true }))
-  , [])
+  const pauseExec = useCallback(() => {
+    // Pause execution via global serial store
+    const pauseExecution = useSerialStore.getState().pauseExecution
+    if (pauseExecution) {
+      pauseExecution()
+    }
+  }, [])
   
-  const resumeExec = useCallback(() => 
-    setExecState(p => ({ ...p, paused: false }))
-  , [])
+  const resumeExec = useCallback(() => {
+    // Resume execution via global serial store
+    const resumeExecution = useSerialStore.getState().resumeExecution
+    if (resumeExecution) {
+      resumeExecution()
+    }
+  }, [])
   
-  const abortExec = useCallback(() => 
-    setExecState({ running: false, paused: false, progress: 0, total: 0 })
-  , [])
+  const abortExec = useCallback(() => {
+    // Abort execution via global serial store
+    const abortExecution = useSerialStore.getState().abortExecution
+    if (abortExecution) {
+      abortExecution()
+    }
+  }, [])
 
   const canProceed = Object.values(checklist).every(Boolean) || (step.checklist || []).length === 0
 
@@ -763,95 +889,51 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
 
   const renderInput = useCallback((input) => {
     const { type, label, key, defaultValue, min, max, step: stepValue, required } = input
-    // Use current inputValues state - ensure we get the most up-to-date value
-    const value = inputValues[key] ?? defaultValue
     const isGlobalParam = GLOBAL_PARAMETERS[key]
 
-    // Debug logging to track state changes
-    console.log(`Rendering input ${key}:`, { value, inputValues, defaultValue })
-
-    switch (type) {
-      case 'checkbox':
-        return (
-          <div key={key} className="flex items-center">
-            <input
-              type="checkbox"
-              id={key}
-              checked={!!value}
-              onChange={(e) => {
-                console.log(`Checkbox ${key} changed to:`, e.target.checked)
-                handleInputChange(key, e.target.checked)
-              }}
-              className="h-4 w-4 text-blue-50 dark:text-blue-9000 focus:ring-blue-500 border-gray-300 dark:border-gray-600 rounded"
-            />
-            <label htmlFor={key} className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-              {label}
-              {isGlobalParam && (
-                <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
-                  Global
-                </span>
-              )}
-            </label>
-          </div>
-        )
-      case 'number':
-        return (
-          <div key={key}>
-            <label htmlFor={key} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              {label}
-              {required && <span className="text-gray-700 dark:text-gray-300 ml-1">*</span>}
-              {isGlobalParam && (
-                <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
-                  Global
-                </span>
-              )}
-            </label>
-            <input
-              type="number"
-              id={key}
-              value={value || ''}
-              onChange={(e) => {
-                const newValue = parseFloat(e.target.value) || 0
-                console.log(`Number input ${key} changed to:`, newValue)
-                handleInputChange(key, newValue)
-              }}
-              min={min}
-              max={max}
-              step={stepValue}
-              required={required}
-              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-        )
-      case 'text':
-        return (
-          <div key={key}>
-            <label htmlFor={key} className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              {label}
-              {required && <span className="text-gray-700 dark:text-gray-300 ml-1">*</span>}
-              {isGlobalParam && (
-                <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
-                  Global
-                </span>
-              )}
-            </label>
-            <input
-              type="text"
-              id={key}
-              value={value || ''}
-              onChange={(e) => {
-                console.log(`Text input ${key} changed to:`, e.target.value)
-                handleInputChange(key, e.target.value)
-              }}
-              required={required}
-              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-        )
-      default:
-        return null
+    // Validation function for this input
+    const validateInput = (value) => {
+      if (required && (!value || value === '')) {
+        return 'This field is required'
+      }
+      if (type === 'number' && value !== '') {
+        const numValue = parseFloat(value)
+        if (isNaN(numValue)) {
+          return 'Must be a valid number'
+        }
+        if (min !== undefined && numValue < min) {
+          return `Must be at least ${min}`
+        }
+        if (max !== undefined && numValue > max) {
+          return `Must be at most ${max}`
+        }
+      }
+      return true
     }
-  }, [inputValues, handleInputChange])
+
+    return (
+      <Input
+        key={key}
+        type={type}
+        label={label}
+        placeholder={input.placeholder}
+        min={min}
+        max={max}
+        step={stepValue}
+        required={required}
+        validate={validateInput}
+        syncWithStore={isGlobalParam}
+        getStoreValue={() => globalParams[key]}
+        onChangeStore={(value) => {
+          console.log('Store update for global parameter:', key, 'value:', value)
+          handleInputChange(key, value)
+        }}
+        initialValue={inputValues[key] || defaultValue || ''}
+        className={isGlobalParam ? 'border-blue-300 bg-blue-50' : ''}
+        errorClassName="text-red-600"
+      />
+    )
+  }, [inputValues, handleInputChange, globalParams])
 
   const handlePhotoUpload = (e) => {
     const files = Array.from(e.target.files || [])
@@ -888,6 +970,46 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
           </span>
         </div>
       </div>
+
+      {/* Execution Status Banner */}
+      {execState.running && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-4 h-4 bg-blue-600 rounded-full animate-pulse" />
+              <div>
+                <h3 className="font-medium text-blue-900">Calibration in Progress</h3>
+                <p className="text-sm text-blue-700">
+                  {step.name} - {execState.progress} / {execState.total} commands sent
+                </p>
+                <p className="text-xs text-blue-600 mt-1">
+                  ⚠️ Do not navigate away or refresh the page during execution
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-sm font-mono text-blue-800">
+                {execState.total > 0 ? 
+                  `${Math.round((execState.progress / execState.total) * 100)}%` : 
+                  '0%'
+                }
+              </div>
+              <div className="w-24 bg-blue-200 rounded-full h-2 mt-1">
+                <div 
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${execState.total > 0 ? (execState.progress / execState.total) * 100 : 0}%` }}
+                />
+              </div>
+              <button
+                onClick={abortExec}
+                className="mt-2 px-3 py-1 bg-red-100 text-red-800 rounded hover:bg-red-200 text-xs"
+              >
+                Abort (Emergency Stop)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="border-b border-gray-200 dark:border-gray-700 mb-4">
