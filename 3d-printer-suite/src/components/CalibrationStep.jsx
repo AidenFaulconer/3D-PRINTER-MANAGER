@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react'
+import React, { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react'
 import { 
   Play, 
   Save, 
@@ -29,8 +29,9 @@ import CalibrationReportModal from './CalibrationReportModal'
 import CalibrationMonitor from './CalibrationMonitor'
 import TemperatureControl from './controls/TemperatureControl'
 import BedLevelVisualization from './BedLevelVisualization'
-import { GcodeViewer3D } from './GcodeViewer3D'
-import { SimpleGcodeViewer3D } from './SimpleGcodeViewer3D'
+// Dynamic imports for 3D viewers to reduce bundle size
+const GcodeViewer3D = React.lazy(() => import('./GcodeViewer3D').then(module => ({ default: module.GcodeViewer3D })))
+const SimpleGcodeViewer3D = React.lazy(() => import('./SimpleGcodeViewer3D').then(module => ({ default: module.SimpleGcodeViewer3D })))
 import Input from './Input'
 
 const Tabs = ['Instructions', 'Visuals', 'Configuration', 'Results']
@@ -222,12 +223,21 @@ const ControlSection = memo(({
                 </div>
               ) : (
                 <div className="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden">
-                  <SimpleGcodeViewer3D 
-                    content={generatedGcode} 
-                    width="100%" 
-                    height={600}
-                    buildPlateSize={activePrinter?.bedSize || { x: 220, y: 220 }}
-                  />
+                  <React.Suspense fallback={
+                    <div className="flex items-center justify-center h-[600px] bg-gray-100 dark:bg-gray-800">
+                      <div className="text-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">Loading 3D viewer...</p>
+                      </div>
+                    </div>
+                  }>
+                    <SimpleGcodeViewer3D 
+                      content={generatedGcode} 
+                      width="100%" 
+                      height={600}
+                      buildPlateSize={activePrinter?.bedSize || { x: 220, y: 220 }}
+                    />
+                  </React.Suspense>
                 </div>
               )}
             </div>
@@ -557,6 +567,17 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
     setInputUpdateCounter(prev => prev + 1)
   }, [activePrinterId, step.id])
 
+  // Auto-regenerate G-code when inputs change (debounced)
+  useEffect(() => {
+    let timer
+    if (step?.gcode) {
+      timer = setTimeout(() => {
+        generateGcode()
+      }, 300)
+    }
+    return () => { if (timer) clearTimeout(timer) }
+  }, [inputUpdateCounter, step?.id])
+
   const generateGcode = useCallback(async () => {
     console.log('Generating G-code for step:', step?.id)
     console.log('Step gcode function:', step?.gcode)
@@ -635,8 +656,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
       if (!confirm('This routine may involve extrusion or heating. Ensure target temperatures are set and safe to proceed. Continue?')) return
     }
     
-    // Optional temp checks (best-effort): request M105 and parse recent
-    await sendCommand('M105')
+    // Skip pre-stream temperature ping to minimize latency during streaming
     
     const lines = generatedGcode.split(/\r?\n/).map(l=>l.trim())
     const payload = lines.filter(l => l && !l.startsWith(';'))

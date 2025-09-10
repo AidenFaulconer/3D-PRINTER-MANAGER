@@ -4,7 +4,7 @@ import commonjs from '@rollup/plugin-commonjs'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: '/3D-PRINTER-MANAGER/3d-printer-suite/',
+  base: '/3D-PRINTER-MANAGER/',
   plugins: [
     commonjs({
       requireReturnsDefault: 'auto',
@@ -49,6 +49,7 @@ export default defineConfig({
     ]
   },
   build: {
+    chunkSizeWarningLimit: 1000, // Increase limit to 1MB to suppress warnings for Three.js
     commonjsOptions: {
       include: [/three/, /drei/, /fiber/, /zustand/],
       transformMixedEsModules: true,
@@ -57,11 +58,25 @@ export default defineConfig({
     rollupOptions: {
       external: [],
       output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom'],
-          'state-management': ['zustand'],
-          'three': ['three'],
-          'react-three': ['@react-three/fiber', '@react-three/drei']
+        manualChunks: (id) => {
+          // Separate Three.js into its own chunk
+          if (id.includes('three') || id.includes('@react-three')) {
+            return 'three-3d'
+          }
+          // Separate React libraries
+          if (id.includes('react') || id.includes('react-dom')) {
+            return 'react-vendor'
+          }
+          // Separate state management
+          if (id.includes('zustand')) {
+            return 'state-management'
+          }
+          // Separate other large libraries
+          if (id.includes('lucide-react')) {
+            return 'icons'
+          }
+          // Default chunk for other modules
+          return 'vendor'
         }
       }
     }

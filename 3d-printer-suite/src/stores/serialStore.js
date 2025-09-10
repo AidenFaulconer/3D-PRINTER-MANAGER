@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { devtools } from 'zustand/middleware'
+import usePrintersStore from './printersStore'
 
 const DEFAULT_BAUDS = [115200, 250000, 57600, 38400, 9600] // Prioritize 115200 for Ender 3
 
@@ -1158,6 +1159,11 @@ const useSerialStore = create(
         await acquireWriterLock();
         let writer = null;
 
+        const isConnectionError = (e) => {
+          const msg = String(e && e.message ? e.message : e).toLowerCase()
+          return /receiving end does not exist|disconnected|device has been lost|invalidstateerror|failed to write|port.*closed|not connected/.test(msg)
+        }
+
         try {
           // Get writer
           // Avoid nested getWriter when stream is locked
@@ -1202,6 +1208,25 @@ const useSerialStore = create(
           
         } catch (e) {
           appendSerialLog(`Send error: ${e.message}`, 'err');
+          if (isConnectionError(e)) {
+            try {
+              const st = get()
+              if (st.isStreamingProgram) {
+                set({ isStreamingProgram: false }, false, 'connectionLostStopStream')
+                if (st.currentExecution) {
+                  get().cancelExecution?.()
+                }
+              }
+              set(({ temperatures }) => ({
+                status: 'disconnected',
+                port: null,
+                error: 'Serial connection lost',
+                temperatures
+              }), false, 'connectionLost')
+              appendSerialLog('Serial connection lost. Please reconnect the printer.', 'err')
+            } catch {}
+            throw new Error('Serial connection lost')
+          }
           throw e;
         } finally {
           if (writer) {
@@ -1225,7 +1250,7 @@ const useSerialStore = create(
 
       // Send multiple commands with proper busy handling
       const sendCommandsWithWait = async (gcodeArray, options = {}) => {
-        const { delayMs = 100, waitForReady = true } = options
+        const { delayMs = 0, waitForReady = true } = options
         
         for (const line of gcodeArray) {
           if (!line || /^\s*(;|#)/.test(line)) continue
@@ -1235,20 +1260,27 @@ const useSerialStore = create(
       }
 
       // Wait for printer to be ready (not busy) - wait indefinitely until ready
-      const waitForPrinterReady = async (maxWaitMs = 300000) => { // 5 minutes max
+      const waitForPrinterReady = async (maxWaitMs = 900000) => { // 15 minutes max
         const startTime = Date.now()
         let lastLogTime = startTime
         
         while (true) {
           const state = get()
+          if (state.status !== 'connected' || !state.port) {
+            throw new Error('Not connected')
+          }
           const recentLogs = state.serialLogs.slice(-10) // Check last 10 logs
           
           // Check if printer is busy
           const isBusy = recentLogs.some(log => 
-            log.type === 'rx' && log.message.includes('echo:busy: processing')
+            log.type === 'rx' && /busy: processing/i.test(String(log.message))
+          )
+          // Check if printer is explicitly waiting for user interaction
+          const isWaitingForUser = recentLogs.some(log => 
+            log.type === 'rx' && /(wait for user|paused for user|click to resume|waiting for user input)/i.test(String(log.message))
           )
           
-          if (!isBusy) {
+          if (!isBusy && !isWaitingForUser) {
             return true // Printer is ready
           }
           
@@ -1262,7 +1294,11 @@ const useSerialStore = create(
           // Log progress every 5 seconds to show we're waiting
           if (now - lastLogTime > 5000) {
             const waitTime = Math.round((now - startTime) / 1000)
-            appendSerialLog(`Waiting for printer to be ready... (${waitTime}s)`, 'info')
+            if (isWaitingForUser) {
+              appendSerialLog(`Waiting for user to resume on printer... (${waitTime}s)`, 'info')
+            } else {
+              appendSerialLog(`Waiting for printer to be ready... (${waitTime}s)`, 'info')
+            }
             lastLogTime = now
           }
           
@@ -1273,7 +1309,7 @@ const useSerialStore = create(
 
       // Send command and wait for printer to be ready - NEVER skip commands
       const sendCommandWithWait = async (gcode, options = {}) => {
-        const { waitForReady = true, maxRetries = 3, retryDelay = 1000 } = options
+        const { waitForReady = true, maxRetries = 3, retryDelay = 1000, postSendDelayMs } = options
         
         if (!gcode || gcode.trim().length === 0) {
           return
@@ -1293,15 +1329,23 @@ const useSerialStore = create(
         // Send the command - this will only execute when printer is ready
         await sendCommand(gcode)
         
-        // Wait a bit for the command to be processed
-        await new Promise(resolve => setTimeout(resolve, 100))
+        // Optional tiny delay after send; default 0ms during streaming
+        const stAfter = get()
+        const delay = (typeof postSendDelayMs === 'number') ? postSendDelayMs : (stAfter.isStreamingProgram ? 0 : 20)
+        if (delay > 0) {
+          await new Promise(resolve => setTimeout(resolve, delay))
+        }
       }
 
       // Stream a full G-code program with proper busy handling
       const sendGcodeProgram = async (programText, options = {}) => {
         const {
-          delayMs = 100,
+          delayMs = 0,
           waitForReady = true,
+          // Whether to wait for explicit 'ok' responses after each command
+          waitForOk = true,
+          // Max time to wait for an 'ok' before proceeding (ms)
+          okTimeoutMs = 60000,
           onProgress,
           executionData = {} // { stepName, stepId, etc. }
         } = options
@@ -1337,18 +1381,26 @@ const useSerialStore = create(
           const unsub = useSerialStore.subscribe(
             s => (s.serialLogs.length),
             () => {
-              const recent = get().serialLogs.slice(-10)
+              const stNow = get()
+              if (stNow.status !== 'connected' || !stNow.port) {
+                resolved = true
+                unsub()
+                return reject(new Error('Not connected'))
+              }
+              const recent = stNow.serialLogs.slice(-10)
               const hasOk = recent.some(l => (l.type === 'rx') && /^ok\b/i.test(String(l.message).trim()))
-              const hasBusy = recent.some(l => (l.type === 'rx') && /echo:busy: processing/i.test(String(l.message).trim()))
+              const hasBusy = recent.some(l => (l.type === 'rx') && /busy: processing/i.test(String(l.message).trim()))
+              const isWaitingForUser = recent.some(l => (l.type === 'rx') && /(wait for user|paused for user|click to resume|waiting for user input)/i.test(String(l.message).trim()))
               const hasErr = recent.some(l => (l.type === 'rx') && /error|unknown|invalid/i.test(l.message))
               
               // Debug logging
               if (Date.now() - start > 1000 && !resolved) { // Log after 1 second
                 console.log('Awaiting OK - Recent logs:', recent.map(l => `${l.type}: ${l.message}`).slice(-3))
-                console.log('hasOk:', hasOk, 'hasBusy:', hasBusy, 'hasErr:', hasErr)
+                console.log('hasOk:', hasOk, 'hasBusy:', hasBusy, 'isWaitingForUser:', isWaitingForUser, 'hasErr:', hasErr)
               }
               
-              if ((hasOk || hasBusy) && !resolved) {
+              // Only resolve on explicit 'ok'. Busy or waiting-for-user must NOT advance the stream.
+              if (hasOk && !resolved) {
                 resolved = true
                 unsub()
                 resolve()
@@ -1357,9 +1409,14 @@ const useSerialStore = create(
                 unsub()
                 reject(new Error('Printer error reported'))
               } else if (Date.now() - start > okTimeoutMs && !resolved) {
+                // If timed out but printer indicates waiting for user, keep waiting
+                if (isWaitingForUser || hasBusy) {
+                  return
+                }
+                // Otherwise, be lenient if ok not echoed
                 resolved = true
                 unsub()
-                resolve() // be lenient if ok not echoed
+                resolve()
               }
             }
           )
@@ -1376,7 +1433,7 @@ const useSerialStore = create(
 
             try {
               // Use sendCommandWithWait to respect printer busy state - this will wait indefinitely
-              await sendCommandWithWait(lines[i], { waitForReady: waitForReady })
+              await sendCommandWithWait(lines[i], { waitForReady: waitForReady, postSendDelayMs: 0 })
               if (delayMs) await new Promise(r => setTimeout(r, delayMs))
               
               try { 
@@ -1415,6 +1472,11 @@ const useSerialStore = create(
           // Cancel execution tracking on error
           if (executionData.stepName) {
             get().cancelExecution()
+          }
+          if (/serial connection lost|not connected/i.test(String(error.message))) {
+            appendSerialLog('Program stopped: serial connection lost. Reconnect and retry.', 'err')
+          } else {
+            appendSerialLog(`Program error: ${error.message}`, 'err')
           }
           throw error
         } finally {
@@ -1787,9 +1849,8 @@ const useSerialStore = create(
                   appendSerialLog(`Parsed M503 settings: ${Object.keys(parsedSettings).join(', ')}`, 'sys')
                   
                   // Store settings in printer store for persistence
-                  import('./printersStore').then((mod) => {
-                    const printersStoreHook = mod.default
-                    const printersStateObj = printersStoreHook.getState()
+                  try {
+                    const printersStateObj = usePrintersStore.getState()
                     let activePrinterId = printersStateObj.activePrinterId
                     
                     console.log('SerialStore: Storing M503 settings')
@@ -1808,23 +1869,23 @@ const useSerialStore = create(
                         calibrationSteps: [],
                         lastUpdated: new Date().toISOString()
                       }
-                      printersStoreHook.getState().addPrinter(defaultPrinter)
-                      activePrinterId = printersStoreHook.getState().activePrinterId
+                      usePrintersStore.getState().addPrinter(defaultPrinter)
+                      activePrinterId = usePrintersStore.getState().activePrinterId
                       console.log('SerialStore: Created default printer with ID:', activePrinterId)
                       appendSerialLog(`Created default printer with ID: ${activePrinterId}`, 'sys')
                     }
                     
                     if (activePrinterId && parsedSettings) {
-                      printersStoreHook.getState().updatePrinterSettings(activePrinterId, parsedSettings)
+                      usePrintersStore.getState().updatePrinterSettings(activePrinterId, parsedSettings)
                       appendSerialLog(`Printer settings stored for printer ${activePrinterId}`, 'sys')
                     } else {
                       console.log('SerialStore: Cannot store settings - activePrinterId:', activePrinterId, 'parsedSettings:', parsedSettings)
                       appendSerialLog(`Cannot store settings - activePrinterId: ${activePrinterId}, parsedSettings: ${!!parsedSettings}`, 'err')
                     }
-                  }).catch(error => {
+                  } catch (error) {
                     console.log('SerialStore: Error storing printer settings:', error)
                     appendSerialLog(`Error storing printer settings: ${error.message}`, 'err')
-                  })
+                  }
                   
                   // Clear M503 response after processing
                   set({ m503Response: [] }, false, 'clearM503Response')

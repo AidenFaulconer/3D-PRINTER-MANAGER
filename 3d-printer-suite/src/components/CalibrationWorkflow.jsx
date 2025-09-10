@@ -66,8 +66,9 @@ const GLOBAL_PARAMETERS = {
   firstLayerSpeed: true
 }
 import TemperatureChart from './controls/TemperatureChart'
-import { GcodeViewer3D } from './GcodeViewer3D'
-import { SimpleGcodeViewer3D } from './SimpleGcodeViewer3D'
+// Dynamic imports for 3D viewers to reduce bundle size
+const GcodeViewer3D = React.lazy(() => import('./GcodeViewer3D').then(module => ({ default: module.GcodeViewer3D })))
+const SimpleGcodeViewer3D = React.lazy(() => import('./SimpleGcodeViewer3D').then(module => ({ default: module.SimpleGcodeViewer3D })))
 
 const CalibrationWorkflow = () => {
   // Check if we're coming from bed-leveling route
@@ -875,12 +876,21 @@ const CalibrationWorkflow = () => {
                   ) : (
                     <div className="border border-gray-300 rounded-lg overflow-hidden">
                       {console.log('Rendering 3D view, gcodeViewMode:', gcodeViewMode, 'generatedGcode length:', generatedGcode?.length)}
-                      <SimpleGcodeViewer3D 
-                        content={generatedGcode} 
-                        width="100%" 
-                        height={600}
-                        buildPlateSize={activePrinter?.bedSize || { x: 220, y: 220 }}
-                      />
+                      <React.Suspense fallback={
+                        <div className="flex items-center justify-center h-[600px] bg-gray-100 dark:bg-gray-800">
+                          <div className="text-center">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Loading 3D viewer...</p>
+                          </div>
+                        </div>
+                      }>
+                        <SimpleGcodeViewer3D 
+                          content={generatedGcode} 
+                          width="100%" 
+                          height={600}
+                          buildPlateSize={activePrinter?.bedSize || { x: 220, y: 220 }}
+                        />
+                      </React.Suspense>
                     </div>
                   )}
                 </div>

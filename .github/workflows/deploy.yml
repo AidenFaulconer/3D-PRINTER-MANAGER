@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: '3d-printer-suite/.nvmrc'
           cache: 'yarn'
           cache-dependency-path: 3d-printer-suite/yarn.lock
 
@@ -41,11 +41,11 @@ jobs:
       - name: Build
         run: yarn build
 
+      - name: Create .nojekyll file
+        run: touch dist/.nojekyll
+
       - name: SPA fallback (copy index.html to 404.html)
         run: cp dist/index.html dist/404.html || true
-
-      - name: copy dist to root
-        run: cp dist ../ 
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
