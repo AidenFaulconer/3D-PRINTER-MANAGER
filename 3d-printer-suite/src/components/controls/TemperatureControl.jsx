@@ -122,10 +122,13 @@ function useTemperatureData(isConnected, send) {
       }
     )
 
-    // Start M105 polling for this component only
+    // Start M105 polling for this component only - but pause during streaming
     m105IntervalRef.current = setInterval(async () => {
       const state = useSerialStore.getState()
       if (state.status !== 'connected' || !state.port?.writable) return
+      
+      // Don't poll during active G-code streaming to avoid interference
+      if (state.isStreamingProgram) return
       
       try {
         // Send M105 directly without going through sendCommand to avoid writer lock issues

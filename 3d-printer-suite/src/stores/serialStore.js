@@ -1375,7 +1375,11 @@ const useSerialStore = create(
         }
 
         const awaitOk = () => new Promise((resolve, reject) => {
-          if (!waitForOk) return resolve()
+          if (!waitForOk) {
+            // If not waiting for OK, just wait a short time for command processing
+            setTimeout(resolve, 50)
+            return
+          }
           let resolved = false
           const start = Date.now()
           const unsub = useSerialStore.subscribe(

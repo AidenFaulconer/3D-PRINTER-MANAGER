@@ -637,15 +637,21 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
   }, [step?.gcode, step?.id, step?.inputs])
 
   const sendToPrinter = useCallback(async () => {
+    console.log('sendToPrinter called - serialStatus:', serialStatus, 'generatedGcode length:', generatedGcode?.length)
+    
     if (serialStatus !== 'connected') {
       console.log('Cannot send to printer - not connected. Current status:', serialStatus)
       return
     }
     if (!generatedGcode) {
+      console.log('No generated G-code, generating...')
       await generateGcode()
       // Wait for next render to get updated gcode
       await new Promise(resolve => setTimeout(resolve, 0))
-      if (!generatedGcode) return
+      if (!generatedGcode) {
+        console.log('Still no G-code after generation attempt')
+        return
+      }
     }
     
     // Safety checks for common cases
@@ -672,12 +678,16 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
     // We don't need to set local state here
     
     try {
+      console.log('Attempting to send G-code program, payload length:', payload.length)
       const sendProgram = useSerialStore.getState().sendGcodeProgram
+      console.log('sendGcodeProgram function available:', typeof sendProgram === 'function')
+      
       if (typeof sendProgram === 'function') {
+        console.log('Using sendGcodeProgram method')
         await sendProgram(payload.join('\n'), {
-          delayMs: 60,
-          waitForOk: true,
-          okTimeoutMs: 5000,
+          delayMs: 0,
+          waitForOk: false,
+          okTimeoutMs: 2000,
           executionData: {
             stepName: step.name,
             stepId: step.id,
@@ -688,7 +698,9 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
             console.log(`G-code progress: ${progress}/${total}`)
           }
         })
+        console.log('G-code program completed successfully')
       } else {
+        console.log('Using fallback line-by-line method')
         // Fallback: line-by-line - start execution tracking manually
         const { startExecution, updateExecutionProgress, completeExecution } = useSerialStore.getState()
         startExecution({
@@ -741,7 +753,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
       // Execution state is managed by the global serial store
       console.log('G-code execution completed')
     }
-  }, [serialStatus, sendCommand, generatedGcode, execState, generateGcode])
+  }, [serialStatus, generatedGcode, execState, generateGcode])
 
   const pauseExec = useCallback(() => {
     // Pause execution via global serial store
