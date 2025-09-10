@@ -1,16 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import commonjs from '@rollup/plugin-commonjs'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: '/3D-PRINTER-MANAGER/3d-printer-suite/',
+  base: '/',
   plugins: [
-    commonjs({
-      requireReturnsDefault: 'auto',
-      include: ['node_modules/**'],
-      transformMixedEsModules: true
-    }),
     react(),
   ],
   worker: {
@@ -50,13 +44,7 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 1000, // Increase limit to 1MB to suppress warnings for Three.js
-    commonjsOptions: {
-      include: [/three/, /drei/, /fiber/, /zustand/],
-      transformMixedEsModules: true,
-      requireReturnsDefault: 'auto'
-    },
     rollupOptions: {
-      external: [],
       output: {
         manualChunks: (id) => {
           // Separate Three.js into its own chunk
