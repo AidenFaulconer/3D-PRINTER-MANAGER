@@ -47,21 +47,23 @@ jobs:
       - name: SPA fallback (copy index.html to 404.html)
         run: cp dist/index.html dist/404.html || true
 
-      - name: Copy dist contents to root for GitHub Pages
+      - name: Create deployment structure
         run: |
           # Go back to root directory
           cd ..
-          # Copy all contents from 3d-printer-suite/dist to root
-          cp -r 3d-printer-suite/dist/* .
-          # Ensure .nojekyll is in root
-          touch .nojekyll
+          # Create the 3D-PRINTER-MANAGER directory structure
+          mkdir -p 3D-PRINTER-MANAGER/3d-printer-suite
+          # Copy all contents from 3d-printer-suite/dist to the target directory
+          cp -r 3d-printer-suite/dist/* 3D-PRINTER-MANAGER/3d-printer-suite/
+          # Ensure .nojekyll is in the target directory
+          touch 3D-PRINTER-MANAGER/3d-printer-suite/.nojekyll
           # Create 404.html for SPA fallback
-          cp index.html 404.html || true
+          cp 3D-PRINTER-MANAGER/3d-printer-suite/index.html 3D-PRINTER-MANAGER/3d-printer-suite/404.html || true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: 3D-PRINTER-MANAGER/3d-printer-suite
 
   deploy:
     environment:
