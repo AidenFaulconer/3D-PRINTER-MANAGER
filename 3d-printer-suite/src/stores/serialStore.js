@@ -1470,12 +1470,14 @@ const useSerialStore = create(
           try {
             // Send M25 to stop any SD print job and clear printing status
             await sendCommandWithWait('M25', { waitForReady: false, postSendDelayMs: 0 })
-            // Send M26 to set SD position to 0 (clears any remaining print state)
+            // Send M26 to reset SD position to 0
             await sendCommandWithWait('M26', { waitForReady: false, postSendDelayMs: 0 })
+            // Send M27 to get SD print status (this often clears the printing state)
+            await sendCommandWithWait('M27', { waitForReady: false, postSendDelayMs: 0 })
             // Send M105 to get final status and confirm printer is ready
             await sendCommandWithWait('M105', { waitForReady: false, postSendDelayMs: 0 })
-            // Send G28 X Y to home X and Y axes (returns printer to known position)
-            await sendCommandWithWait('G28 X Y', { waitForReady: false, postSendDelayMs: 0 })
+            // Send M18 to disable stepper motors (this often clears print status)
+            await sendCommandWithWait('M18', { waitForReady: false, postSendDelayMs: 0 })
             appendSerialLog('Print job completed - printer returned to ready state', 'info')
           } catch (e) {
             // Don't fail the entire job if status clearing fails

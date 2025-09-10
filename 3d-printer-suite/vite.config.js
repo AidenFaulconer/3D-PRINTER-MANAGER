@@ -4,7 +4,7 @@ import commonjs from '@rollup/plugin-commonjs'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: '/3D-PRINTER-MANAGER/',
+  base: '/',
   plugins: [
     commonjs({
       requireReturnsDefault: 'auto',
