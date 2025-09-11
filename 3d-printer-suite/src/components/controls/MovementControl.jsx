@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import useSerialStore from '../../stores/serialStore'
 
 const steps = [1, 10, 100]
 
@@ -27,7 +28,11 @@ export default function MovementControl({ send, requestPosition, lastPosition })
   }
 
   useEffect(() => {
-    const id = setInterval(() => requestPosition && requestPosition(), 1500)
+    const id = setInterval(() => {
+      const st = useSerialStore.getState()
+      if (st.isStreamingProgram || st.status !== 'connected') return
+      requestPosition && requestPosition()
+    }, 1500)
     return () => clearInterval(id)
   }, [requestPosition])
 

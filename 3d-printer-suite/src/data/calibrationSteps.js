@@ -49,11 +49,21 @@ export const calibrationSteps = [
       },
       {
         type: 'number',
-        label: 'Probe Grid Size',
-        key: 'gridSize',
+        label: 'Probe Grid X Points',
+        key: 'bedLevelGridX',
         defaultValue: 5,
         min: 3,
-        max: 9,
+        max: 30,
+        step: 1,
+        required: true
+      },
+      {
+        type: 'number',
+        label: 'Probe Grid Y Points',
+        key: 'bedLevelGridY',
+        defaultValue: 5,
+        min: 3,
+        max: 30,
         step: 1,
         required: true
       },
@@ -85,9 +95,9 @@ export const calibrationSteps = [
       }
     ],
     gcode: (inputValues) => {
-      const { probeSpeed, gridSize, probeZOffset, enableBedHeating, bedTemp } = inputValues
+      const { probeSpeed, bedLevelGridX, bedLevelGridY, probeZOffset, enableBedHeating, bedTemp } = inputValues
       let gcode = `; Bed Leveling Calibration\n`
-      gcode += `; Grid size: ${gridSize}x${gridSize}, Probe speed: ${probeSpeed}mm/min\n`
+      gcode += `; Grid size: ${bedLevelGridX}x${bedLevelGridY}, Probe speed: ${probeSpeed}mm/min\n`
       gcode += `; Z-offset: ${probeZOffset}mm\n`
       gcode += `G90\n`
       gcode += `M82\n`
@@ -104,6 +114,9 @@ export const calibrationSteps = [
       gcode += `M203 Z${probeSpeed}\n`
       gcode += `; Set probe Z-offset\n`
       gcode += `M851 Z${probeZOffset}\n`
+      gcode += `; Set bed leveling grid size (if supported)\n`
+      gcode += `; Note: GRID_MAX_POINTS_X and GRID_MAX_POINTS_Y are firmware compile-time settings\n`
+      gcode += `; Current grid: ${bedLevelGridX}x${bedLevelGridY} points\n`
       gcode += `; Save probe settings\n`
       gcode += `M500\n`
       gcode += `; Enable bed leveling\n`
@@ -247,7 +260,8 @@ export const calibrationSteps = [
         min: 50,
         max: 200,
         step: 0.1,
-        required: true
+        required: true,
+        isGlobalParam: true
       },
       {
         type: 'number',

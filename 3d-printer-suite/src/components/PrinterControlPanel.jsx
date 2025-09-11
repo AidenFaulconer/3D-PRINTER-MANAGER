@@ -76,10 +76,17 @@ const PrinterControlPanel = React.memo(() => {
   }, [processPositionLogs])
 
 
-  const requestPosition = () => sendCommand('M114')
+  const requestPosition = () => {
+    const st = useSerialStore.getState()
+    if (st.isStreamingProgram || st.status !== 'connected') return
+    sendCommand('M114')
+  }
 
   const send = (g) => sendCommand(g)
   
+  // Get bed leveling functions from serialStore
+  const runBedLeveling = useSerialStore(state => state.runBedLeveling)
+  const fetchBedLevel = useSerialStore(state => state.fetchBedLevel)
 
   const preheat = (mat) => {
     if (mat === 'PLA') { send('M104 S205'); send('M140 S60') }
@@ -98,6 +105,37 @@ const PrinterControlPanel = React.memo(() => {
         onConnect={connect}
         onDisconnect={disconnect}
       />
+
+      {/* Bed Leveling Controls */}
+      <div className="bg-white rounded-lg shadow p-4">
+        <h3 className="text-lg font-semibold mb-4">Bed Leveling Controls</h3>
+        <div className="flex flex-wrap gap-3">
+          <button 
+            onClick={runBedLeveling}
+            disabled={status !== 'connected'}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
+          >
+            Start Bed Leveling (G29)
+          </button>
+          <button 
+            onClick={fetchBedLevel}
+            disabled={status !== 'connected'}
+            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
+          >
+            Fetch Bed Level Data
+          </button>
+          <button 
+            onClick={() => send('G29 W')}
+            disabled={status !== 'connected'}
+            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
+          >
+            Save Bed Level (G29 W)
+          </button>
+        </div>
+        <p className="text-sm text-gray-600 mt-2">
+          Start bed leveling to create a new mesh, or fetch existing data to view current bed level.
+        </p>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <MovementControl send={send} requestPosition={requestPosition} lastPosition={position} />

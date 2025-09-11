@@ -1,5 +1,6 @@
 import React, { forwardRef } from 'react'
 import { useInputState } from '../hooks/useInputState'
+import { HelpTooltip } from './Tooltip'
 
 /**
  * Reusable Input component with validation and store integration
@@ -24,6 +25,7 @@ const Input = forwardRef(({
   step,
   disabled = false,
   required = false,
+  helpText,
   ...props
 }, ref) => {
   // Use controlled or uncontrolled mode
@@ -89,9 +91,10 @@ const Input = forwardRef(({
   return (
     <div className="w-full">
       {label && (
-        <label className={labelClasses}>
-          {label}
-          {required && <span className="text-red-500 ml-1">*</span>}
+        <label className={`${labelClasses} flex items-center gap-2`}>
+          <span>{label}</span>
+          {required && <span className="text-red-500">*</span>}
+          {helpText && <HelpTooltip content={helpText} />}
         </label>
       )}
       

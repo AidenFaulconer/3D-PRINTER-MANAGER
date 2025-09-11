@@ -28,11 +28,12 @@ import {
 import CalibrationReportModal from './CalibrationReportModal'
 import CalibrationMonitor from './CalibrationMonitor'
 import TemperatureControl from './controls/TemperatureControl'
-import BedLevelVisualization from './BedLevelVisualization'
+import BedMeshVisualization from './BedMeshVisualization'
 // Dynamic imports for 3D viewers to reduce bundle size
 const GcodeViewer3D = React.lazy(() => import('./GcodeViewer3D').then(module => ({ default: module.GcodeViewer3D })))
 const SimpleGcodeViewer3D = React.lazy(() => import('./SimpleGcodeViewer3D').then(module => ({ default: module.SimpleGcodeViewer3D })))
 import Input from './Input'
+import { getParameterHelpText } from '../data/parameterHelpText'
 
 const Tabs = ['Instructions', 'Visuals', 'Configuration', 'Results']
 
@@ -118,28 +119,31 @@ const ControlSection = memo(({
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Configuration Parameters</h3>
+      <div className="flex items-center justify-between mb-1">
+        <h3 className="text-sm font-medium text-gray-900 dark:text-white">Configuration Parameters</h3>
         <ConnectionButton className="w-auto" />
       </div>
       
-      {/* Global Parameters Display */}
+      {/* Global Parameters Display - Ultra Compact */}
       {activePrinterId && (
-        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4">
-          <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
-            <Settings className="w-4 h-4" />
-            Global Parameters for Printer {activePrinterId}
-          </h4>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded p-1.5 mb-2">
+          <div className="flex items-center justify-between mb-0.5">
+            <h4 className="text-xs font-medium text-blue-900 dark:text-blue-100 flex items-center gap-1">
+              <Settings className="w-2.5 h-2.5" />
+              Global Parameters
+            </h4>
+            <span className="text-xs text-blue-600 dark:text-blue-400">P{activePrinterId}</span>
+          </div>
+          <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-0.5 text-xs">
             {Object.entries(loadGlobalParameters(activePrinterId)).map(([key, value]) => (
-              <div key={key} className="flex justify-between items-center">
-                <span className="text-blue-700 dark:text-blue-300 font-medium">{key}:</span>
-                <span className="text-blue-900 dark:text-blue-100 font-mono">{value}</span>
+              <div key={key} className="flex justify-between items-center min-w-0 px-1 py-0.5 bg-white dark:bg-gray-800 rounded">
+                <span className="text-blue-700 dark:text-blue-300 font-medium truncate mr-1 text-xs">{key}:</span>
+                <span className="text-blue-900 dark:text-blue-100 font-mono text-xs">{value}</span>
               </div>
             ))}
           </div>
-          <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
-            These parameters persist across all calibration steps and are saved per printer.
+          <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5 opacity-75">
+            Persist across steps • Saved per printer
           </p>
         </div>
       )}
@@ -284,8 +288,8 @@ const ConfigurationTab = memo(({
       {step.category === 'Movement' && step.id.includes('level') && (
         <>
           <div className="mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Bed Level Visualization</h3>
-            <BedLevelVisualization />
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Bed Mesh Visualization</h3>
+            <BedMeshVisualization showStatus={true} showActions={true} />
           </div>
           <div className="h-px bg-gray-300 dark:bg-gray-600" />
         </>
@@ -965,6 +969,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
         initialValue={isGlobalParam ? '' : (inputValues[key] || defaultValue || '')}
         className={isGlobalParam ? 'border-blue-300 bg-blue-50' : ''}
         errorClassName="text-red-600"
+        helpText={getParameterHelpText(key, step.id)}
       />
     )
   }, [inputValues, handleInputChange, globalParams])

@@ -25,28 +25,43 @@ const BedMesh2D = ({ meshData, colorScheme, showValues, showGrid }) => {
       return null
     }
 
-    // Convert {i, j, z} points to 2D matrix
-    const points = meshData.mesh
-    const maxI = Math.max(...points.map(p => p.i))
-    const maxJ = Math.max(...points.map(p => p.j))
+    // Check if mesh is already in 2D array format
+    let matrix
+    let values
     
-    const matrix = Array(maxI + 1).fill().map(() => Array(maxJ + 1).fill(null))
-    points.forEach(point => {
-      matrix[point.i][point.j] = point.z
-    })
-
-    // Calculate min/max for color scaling
-    const values = points.map(p => p.z)
+    if (Array.isArray(meshData.mesh[0])) {
+      // Already in 2D array format
+      matrix = meshData.mesh
+      values = matrix.flat().filter(v => typeof v === 'number')
+    } else {
+      // Old format with {i, j, z} objects - convert to 2D array
+      const points = meshData.mesh
+      const maxI = Math.max(...points.map(p => p.i))
+      const maxJ = Math.max(...points.map(p => p.j))
+      
+      matrix = Array(maxI + 1).fill().map(() => Array(maxJ + 1).fill(null))
+      points.forEach(point => {
+        matrix[point.i][point.j] = point.z
+      })
+      
+      values = points.map(p => p.z)
+    }
     const minZ = Math.min(...values)
     const maxZ = Math.max(...values)
     const range = maxZ - minZ
+
+    // Calculate grid size from matrix dimensions
+    const gridSize = {
+      x: matrix.length > 0 ? matrix[0].length : 0,
+      y: matrix.length
+    }
 
     return {
       matrix,
       minZ,
       maxZ,
       range,
-      gridSize: { x: maxI + 1, y: maxJ + 1 }
+      gridSize
     }
   }, [meshData])
 
@@ -185,19 +200,33 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
       return { geometry: null, points: [], zMin: 0, zMax: 0 }
     }
 
-    const meshPoints = meshData.mesh
-    const maxI = Math.max(...meshPoints.map(p => p.i))
-    const maxJ = Math.max(...meshPoints.map(p => p.j))
-    const zMin = Math.min(...meshPoints.map(p => p.z))
-    const zMax = Math.max(...meshPoints.map(p => p.z))
+    // Check if mesh is already in 2D array format
+    let meshArray
+    let maxI, maxJ
     
-    // Create a 2D array to store mesh data
-    const meshArray = Array(maxI + 1).fill().map(() => Array(maxJ + 1).fill(0))
+    if (Array.isArray(meshData.mesh[0])) {
+      // Already in 2D array format
+      meshArray = meshData.mesh
+      maxI = meshArray.length - 1
+      maxJ = meshArray[0].length - 1
+    } else {
+      // Old format with {i, j, z} objects - convert to 2D array
+      const meshPoints = meshData.mesh
+      maxI = Math.max(...meshPoints.map(p => p.i))
+      maxJ = Math.max(...meshPoints.map(p => p.j))
+      
+      // Create a 2D array to store mesh data
+      meshArray = Array(maxI + 1).fill().map(() => Array(maxJ + 1).fill(0))
+      
+      // Fill the array with mesh data
+      meshPoints.forEach(point => {
+        meshArray[point.i][point.j] = point.z
+      })
+    }
     
-    // Fill the array with mesh data
-    meshPoints.forEach(point => {
-      meshArray[point.i][point.j] = point.z
-    })
+    // Calculate min/max Z values
+    const zMin = Math.min(...meshArray.flat())
+    const zMax = Math.max(...meshArray.flat())
     
     // Create geometry for the mesh surface
     const geometry = new THREE.PlaneGeometry(maxJ, maxI, maxJ, maxI)
@@ -226,7 +255,19 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
     geometry.computeVertexNormals()
 
-    return { geometry, points: meshPoints, zMin, zMax }
+    // Create points array for visualization
+    const points = []
+    for (let i = 0; i <= maxI; i++) {
+      for (let j = 0; j <= maxJ; j++) {
+        points.push({
+          x: j,
+          y: i,
+          z: meshArray[i][j]
+        })
+      }
+    }
+
+    return { geometry, points, zMin, zMax }
   }, [meshData])
 
   if (!geometry) {
@@ -241,8 +282,8 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
   }
 
   // Calculate scale information
-  const maxI = Math.max(...points.map(p => p.i))
-  const maxJ = Math.max(...points.map(p => p.j))
+  const maxI = points.length > 0 ? Math.max(...points.map(p => p.x)) : 0
+  const maxJ = points.length > 0 ? Math.max(...points.map(p => p.y)) : 0
   const minZ = zMin
   const maxZ = zMax
   const zRange = maxZ - minZ
@@ -319,7 +360,7 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
           
           {/* Mesh points */}
           {showPoints && points.map((point, index) => (
-            <mesh key={index} position={[point.j - 2.5, point.i - 2.5, point.z * 10]} rotation={[-Math.PI / 2, 0, 0]}>
+            <mesh key={index} position={[point.x - 2.5, point.y - 2.5, point.z * 10]} rotation={[-Math.PI / 2, 0, 0]}>
               <sphereGeometry args={[0.05]} />
               <meshStandardMaterial color="#ef4444" />
             </mesh>
@@ -466,10 +507,10 @@ const BedMeshVisualization = ({ showStatus = true, showActions = true }) => {
     range: bedMesh.range
   } : hasSettingsMeshData ? {
     mesh: printerSettings.bedLeveling.mesh,
-    gridSize: { x: Math.max(...printerSettings.bedLeveling.mesh.map(p => p.i)) + 1, y: Math.max(...printerSettings.bedLeveling.mesh.map(p => p.j)) + 1 },
-    min: Math.min(...printerSettings.bedLeveling.mesh.map(p => p.z)),
-    max: Math.max(...printerSettings.bedLeveling.mesh.map(p => p.z)),
-    range: Math.max(...printerSettings.bedLeveling.mesh.map(p => p.z)) - Math.min(...printerSettings.bedLeveling.mesh.map(p => p.z))
+    gridSize: printerSettings.bedLeveling.gridSize || { x: 5, y: 5 },
+    min: printerSettings.bedLeveling.min || 0,
+    max: printerSettings.bedLeveling.max || 0,
+    range: printerSettings.bedLeveling.range || 0
   } : null
 
   return (

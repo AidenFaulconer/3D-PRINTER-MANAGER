@@ -201,6 +201,14 @@ const usePrintersStore = create(
 
       setActivePrinter: (id) => {
         set({ activePrinterId: id })
+        
+        // Load bed mesh data for the new active printer
+        if (id) {
+          // Import serialStore dynamically to avoid circular dependency
+          import('./serialStore.js').then(({ default: serialStore }) => {
+            serialStore.getState().loadBedMeshFromPrinter(id)
+          })
+        }
       },
 
       updateCalibrationStep: (printerId, stepName, data) => {

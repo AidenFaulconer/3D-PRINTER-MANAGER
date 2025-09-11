@@ -19,8 +19,7 @@ const FirmwareInfoDisplay = React.memo(() => {
        log.message.includes('SOURCE_CODE_URL:') || 
        log.message.includes('PROTOCOL_VERSION:') || 
        log.message.includes('MACHINE_TYPE:') || 
-       log.message.includes('EXTRUDER_COUNT:') || 
-       log.message.includes('Cap:'))
+       log.message.includes('EXTRUDER_COUNT:'))
     )
     setM115Logs(newM115Logs)
   }, [logCount])
@@ -35,7 +34,7 @@ const FirmwareInfoDisplay = React.memo(() => {
     const message = latestM115Log.message
     
     // Look for M115 responses - Marlin format
-    if (message.includes('FIRMWARE_NAME:') || message.includes('SOURCE_CODE_URL:') || message.includes('PROTOCOL_VERSION:') || message.includes('MACHINE_TYPE:') || message.includes('EXTRUDER_COUNT:') || message.includes('Cap:')) {
+    if (message.includes('FIRMWARE_NAME:') || message.includes('SOURCE_CODE_URL:') || message.includes('PROTOCOL_VERSION:') || message.includes('MACHINE_TYPE:') || message.includes('EXTRUDER_COUNT:')) {
       setIsLoading(false)
       
       // Parse firmware information

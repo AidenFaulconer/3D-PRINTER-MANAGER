@@ -19,7 +19,11 @@ const GLOBAL_PARAMETERS = {
   flowRate: 100,
   wallThickness: 0.4,
   enableABL: true,
-  firstLayerSpeed: 20
+  firstLayerSpeed: 20,
+  probeZOffset: 0.0,
+  bedLevelGridX: 5,
+  bedLevelGridY: 5,
+  currentEsteps: 93
 }
 
 // Default parameter values based on common printer configurations

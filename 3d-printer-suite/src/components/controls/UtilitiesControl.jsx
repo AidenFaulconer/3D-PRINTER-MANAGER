@@ -8,8 +8,22 @@ export default function UtilitiesControl({ send }) {
   }
 
   const bedLeveling = () => {
+    // CRITICAL: Run auto-homing first to prevent belt damage
     // If supported: mesh leveling assistant
-    send('G29')
+    send('G28') // Auto-homing first
+    setTimeout(() => {
+      send('G29') // Then bed leveling
+    }, 2000) // Wait 2 seconds for homing to complete
+  }
+
+  const disableSteppers = () => {
+    // Disable all stepper motors
+    send('M18')
+  }
+
+  const enableSteppers = () => {
+    // Enable stepper motors (home first to enable)
+    send('G28')
   }
 
   const emergencyStop = () => {
@@ -22,6 +36,8 @@ export default function UtilitiesControl({ send }) {
       <div className="flex flex-wrap gap-2">
         <button className="px-3 py-2 bg-indigo-600 text-white rounded" onClick={pidTune}>PID Tune (E0)</button>
         <button className="px-3 py-2 bg-blue-600 text-white rounded" onClick={bedLeveling}>Bed Leveling</button>
+        <button className="px-3 py-2 bg-orange-600 text-white rounded" onClick={disableSteppers}>Disable Steppers</button>
+        <button className="px-3 py-2 bg-green-600 text-white rounded" onClick={enableSteppers}>Enable Steppers</button>
         <FirmwareInfoDisplay />
         <button className="px-3 py-2 bg-red-600 text-white rounded" onClick={emergencyStop}>Emergency Stop</button>
       </div>

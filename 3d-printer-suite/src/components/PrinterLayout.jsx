@@ -14,6 +14,7 @@ import ProfilesMaterials from './ProfilesMaterials'
 import SerialPanel from './SerialPanel'
 import PrinterControlPanel from './PrinterControlPanel'
 import { calibrationSteps, getCalibrationStep } from '../data/calibrationSteps'
+import { getStepNumberDisplay } from '../utils/calibrationNumbering'
 
 const PrinterLayout = memo(({ onBackToDashboard }) => {
   const [selectedStep, setSelectedStep] = useState('config')
@@ -173,11 +174,21 @@ const PrinterLayout = memo(({ onBackToDashboard }) => {
       const status = getStepStatus(stepId)
       if (status === 'completed') return 'text-green-500'
       if (status === 'in-progress') return 'text-yellow-500'
-      return 'text-gray-400 dark:text-gray-500'
+      return 'text-blue-500'
     }
     
-    // For non-calibration steps, use better contrast colors
-    return 'text-gray-600 dark:text-gray-300'
+    // For non-calibration steps, use category-based colors
+    const step = navigationSteps.find(s => s.id === stepId)
+    const category = step?.category
+    
+    switch (category) {
+      case 'Configuration': return 'text-purple-500'
+      case 'Diagnostics': return 'text-orange-500'
+      case 'Movement': return 'text-blue-500'
+      case 'Temperature': return 'text-red-500'
+      case 'Quality': return 'text-green-500'
+      default: return 'text-indigo-500'
+    }
   }
 
   const SelectedComponent = navigationSteps.find(step => step.id === selectedStep)?.component || PrinterConfig
@@ -227,24 +238,32 @@ const PrinterLayout = memo(({ onBackToDashboard }) => {
                   {category}
                 </h3>
                 <div className="space-y-2">
-                  {steps.map((step) => {
+                  {steps.map((step, stepIndex) => {
                     const Icon = getStepIcon(step.id)
                     const iconColor = getStepIconColor(step.id)
                     const isSelected = selectedStep === step.id
+                    const isCalibrationStep = calibrationSteps.some(calStep => calStep.id === step.id)
                     
                     return (
                       <button
                         key={step.id}
                         onClick={() => setSelectedStep(step.id)}
-                        className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-colors ${
+                        className={`w-full flex items-center space-x-3 p-3 rounded-lg text-left transition-all duration-200 ${
                           isSelected
-                            ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
-                            : 'hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                            ? isCalibrationStep
+                              ? 'bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 border border-blue-300 dark:border-blue-600 text-blue-800 dark:text-blue-200 shadow-md'
+                              : 'bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/30 dark:to-pink-900/30 border border-purple-300 dark:border-purple-600 text-purple-800 dark:text-purple-200 shadow-md'
+                            : 'hover:bg-gradient-to-r hover:from-gray-50 hover:to-gray-100 dark:hover:from-gray-700 dark:hover:to-gray-600 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:shadow-sm'
                         }`}
                       >
                         <Icon className={`h-5 w-5 ${iconColor}`} />
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm truncate">{step.name}</div>
+                          <div className="font-medium text-sm truncate">
+                            {isCalibrationStep && (
+                              <span className="text-xs text-gray-400 mr-2">{getStepNumberDisplay(step.id)}</span>
+                            )}
+                            {step.name}
+                          </div>
                           <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{step.description}</div>
                         </div>
                       </button>

@@ -20,12 +20,50 @@ const SerialTerminal = React.memo(({ onSend, onSendMany, onClear }) => {
   // Use selective subscription to prevent app-wide re-renders
   const logCount = useSerialStore(state => state.serialLogs?.length || 0)
   const [logs, setLogs] = useState([])
+  const [isVisible, setIsVisible] = useState(false)
+  const [hasNewLogs, setHasNewLogs] = useState(false)
+  const [isUserScrolling, setIsUserScrolling] = useState(false)
   
   useEffect(() => {
     // Only fetch logs when log count changes
     const allLogs = useSerialStore.getState().serialLogs || []
     setLogs(allLogs)
-  }, [logCount])
+    
+    // Mark as having new logs if not at bottom
+    if (scrollRef.current && !isUserScrolling) {
+      const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 10
+      setHasNewLogs(!isAtBottom)
+    }
+  }, [logCount, isUserScrolling])
+
+  // Auto-scroll to bottom when component becomes visible or logs change
+  useEffect(() => {
+    if (isVisible && scrollRef.current && !isUserScrolling) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      setHasNewLogs(false)
+    }
+  }, [isVisible, logs, isUserScrolling])
+
+  // Track when component is visible using Intersection Observer
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsVisible(entry.isIntersecting)
+      },
+      { threshold: 0.1 }
+    )
+
+    if (scrollRef.current) {
+      observer.observe(scrollRef.current)
+    }
+
+    return () => {
+      if (scrollRef.current) {
+        observer.unobserve(scrollRef.current)
+      }
+    }
+  }, [])
   const fetchAllPrinterSettings = useSerialStore(state => state.fetchAllPrinterSettings)
   const serialStatus = useSerialStore(state => state.status)
   const [input, setInput] = useState('')
@@ -63,11 +101,24 @@ const SerialTerminal = React.memo(({ onSend, onSendMany, onClear }) => {
     }
   }
 
-  useEffect(() => {
+  // Handle scroll events to detect user scrolling
+  const handleScroll = () => {
+    if (scrollRef.current) {
+      const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 10
+      setIsUserScrolling(!isAtBottom)
+      setHasNewLogs(!isAtBottom)
+    }
+  }
+
+  // Scroll to bottom function
+  const scrollToBottom = () => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      setIsUserScrolling(false)
+      setHasNewLogs(false)
     }
-  }, [logs])
+  }
 
   const exportLog = () => {
     const text = logs.map(l => `${l.timestamp}\t${l.type}\t${l.message}`).join('\n')
@@ -102,9 +153,17 @@ const SerialTerminal = React.memo(({ onSend, onSendMany, onClear }) => {
   }, [input])
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3 h-full flex flex-col">
+    <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3 h-full flex flex-col max-h-screen">
       <div className="flex items-center justify-between">
-        <div className="text-lg font-semibold text-gray-900">Serial Terminal</div>
+        <div className="flex items-center space-x-2">
+          <div className="text-lg font-semibold text-gray-900">Serial Terminal</div>
+          {hasNewLogs && (
+            <div className="flex items-center space-x-1 text-sm text-blue-600">
+              <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse"></div>
+              <span>New logs</span>
+            </div>
+          )}
+        </div>
         <div className="space-x-2">
           <button onClick={()=>setShowHelper(true)} className="px-3 py-1 text-sm bg-gray-100 rounded inline-flex items-center hover:bg-gray-200"><HelpCircle className="h-4 w-4 mr-1"/> Help</button>
           <button onClick={onClear} className="px-3 py-1 text-sm bg-gray-100 rounded hover:bg-gray-200">Clear</button>
@@ -112,15 +171,35 @@ const SerialTerminal = React.memo(({ onSend, onSendMany, onClear }) => {
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto bg-gray-900 border border-gray-300 rounded p-3 font-mono text-sm">
-        {logs.length === 0 ? (
-          <div className="text-sm text-gray-500 text-center py-8">No messages yet. Connect to your printer to see serial communication.</div>
-        ) : (
-          <div className="space-y-1">
-            {logs.map((entry, idx) => (
-              <Line key={idx} entry={entry} />
-            ))}
-          </div>
+      <div className="relative flex-1 min-h-0">
+        <div 
+          ref={scrollRef} 
+          onScroll={handleScroll}
+          className="h-full overflow-auto bg-gray-900 border border-gray-300 rounded p-3 font-mono text-sm"
+          style={{ 
+            maxHeight: 'calc(100vh - 300px)', // Ensure it doesn't exceed screen height
+            minHeight: '200px' // Minimum height for usability
+          }}
+        >
+          {logs.length === 0 ? (
+            <div className="text-sm text-gray-500 text-center py-8">No messages yet. Connect to your printer to see serial communication.</div>
+          ) : (
+            <div className="space-y-1">
+              {logs.map((entry, idx) => (
+                <Line key={idx} entry={entry} />
+              ))}
+            </div>
+          )}
+        </div>
+        
+        {/* Scroll to bottom button */}
+        {hasNewLogs && (
+          <button
+            onClick={scrollToBottom}
+            className="absolute bottom-4 right-4 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-full shadow-lg text-sm font-medium transition-all duration-200"
+          >
+            ↓ New logs
+          </button>
         )}
       </div>
 

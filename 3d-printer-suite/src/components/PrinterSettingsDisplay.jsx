@@ -112,8 +112,10 @@ const PrinterSettingsDisplay = memo(() => {
             <h4 className="font-medium text-gray-700 mb-2">Mesh Points ({printerSettings.bedLeveling.mesh.length}):</h4>
             <div className="max-h-32 overflow-y-auto bg-gray-50 rounded p-2">
               <pre className="text-xs font-mono">
-                {printerSettings.bedLeveling.mesh.map((point, i) => 
-                  `Point ${i + 1}: (${point.i}, ${point.j}) = ${point.z.toFixed(3)}mm`
+                {printerSettings.bedLeveling.mesh.map((row, j) => 
+                  row.map((z, i) => 
+                    `Point (${i}, ${j}) = ${typeof z === 'number' ? z.toFixed(3) : '0.000'}mm`
+                  ).join('\n')
                 ).join('\n')}
               </pre>
             </div>

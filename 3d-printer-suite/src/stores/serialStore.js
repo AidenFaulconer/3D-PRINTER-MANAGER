@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { devtools } from 'zustand/middleware'
 import usePrintersStore from './printersStore'
+import { loadGlobalParameters, saveGlobalParameters } from '../utils/ParameterTracker.js'
 
 const DEFAULT_BAUDS = [115200, 250000, 57600, 38400, 9600] // Prioritize 115200 for Ender 3
 
@@ -44,9 +45,33 @@ const useSerialStore = create(
             filteredLogs = filteredLogs.slice(-maxLogs)
           }
           
-          return {
-            serialLogs: filteredLogs
-          }
+          const updates = { serialLogs: filteredLogs }
+
+          // Toast alerts for busy or echo messages (limit queue to 3)
+          try {
+            const msgStr = String(message || '')
+            const isRx = type === 'rx'
+            const isBusy = /\bbusy\b/i.test(msgStr)
+            const isEcho = /^\s*echo:/i.test(msgStr)
+            if (isRx && (isBusy || isEcho)) {
+              const id = `${now}-${Math.random().toString(36).slice(2, 7)}`
+              const alertItem = {
+                id,
+                kind: isBusy ? 'busy' : 'echo',
+                message: msgStr.trim(),
+                createdAt: now
+              }
+              const nextAlerts = [...(state.alerts || []), alertItem].slice(-3)
+              updates.alerts = nextAlerts
+
+              // Auto-dismiss after 4 seconds
+              setTimeout(() => {
+                set((s) => ({ alerts: (s.alerts || []).filter(a => a.id !== id) }), false, 'autoDismissAlert')
+              }, 4000)
+            }
+          } catch (_) {}
+
+          return updates
         }, false, 'appendSerialLog')
       }
 
@@ -212,6 +237,20 @@ const useSerialStore = create(
               continue
             }
 
+            // GRID_MAX_POINTS_X - Bed leveling grid X points
+            const gridXMatch = line.match(/GRID_MAX_POINTS_X\s+(\d+)/i)
+            if (gridXMatch) {
+              settings.bedLeveling.gridX = parseInt(gridXMatch[1])
+              continue
+            }
+
+            // GRID_MAX_POINTS_Y - Bed leveling grid Y points
+            const gridYMatch = line.match(/GRID_MAX_POINTS_Y\s+(\d+)/i)
+            if (gridYMatch) {
+              settings.bedLeveling.gridY = parseInt(gridYMatch[1])
+              continue
+            }
+
             // M900 - Linear advance
             const m900Match = line.match(/M900\s+K(\d+(?:\.\d+)?)/i)
             if (m900Match) {
@@ -239,15 +278,7 @@ const useSerialStore = create(
 
       const parseBedMeshData = (message) => {
         try {
-          // Enhanced logging for M503 responses - capture ALL responses
-          if (message.includes('echo:') || message.includes('Bed') || message.includes('Mesh') || message.includes('[') || message.includes('X:') || message.includes('Y:') || message.includes('Z:') || message.includes('eeprom:') || message.includes('ok') || message.includes('M503')) {
-            console.log('M503 Response:', message)
-          }
-          
-          // Log ALL responses that might contain bed leveling data
-          if (message.trim() && !message.includes('ok') && !message.includes('echo:busy')) {
-            console.log('Potential bed mesh data:', message)
-          }
+          // Reduce console noise: remove verbose debug logs in production
           
           // Look for bed leveling grid data
           if (message.includes('Bed Leveling Grid:') || message.includes('Bilinear Leveling Grid:') || message.includes('Mesh Bed Leveling') || message.includes('Bilinear Leveling')) {
@@ -384,14 +415,33 @@ const useSerialStore = create(
         }
       }
 
-      const updateBedMesh = (meshData) => {
+      const updateBedMesh = (meshData, printerId) => {
         if (!meshData || !meshData.data.length) return
+        if (!printerId) {
+          console.log('SerialStore: Cannot update bed mesh - no printer ID provided')
+          return
+        }
 
         const values = meshData.data.flat()
         const min = Math.min(...values)
         const max = Math.max(...values)
         const range = max - min
 
+        // Update printer-specific bed mesh data
+        const printersState = usePrintersStore.getState()
+        printersState.updatePrinterSettings(printerId, {
+          bedLeveling: {
+            enabled: true,
+            mesh: meshData.data,
+            gridSize: meshData.gridSize,
+            min,
+            max,
+            range,
+            timestamp: Date.now()
+          }
+        })
+
+        // Also update the global state for display
         set((state) => ({
           bedMesh: {
             data: meshData.data,
@@ -405,11 +455,24 @@ const useSerialStore = create(
         }), false, 'updateBedMesh')
       }
 
-      const processBedMeshData = () => {
+      const processBedMeshData = (printerId) => {
         const state = get()
         const rawData = state.bedMesh.rawData || []
         
-        if (rawData.length === 0) return
+        // Get printer ID from active printer if not provided
+        const activePrinterId = printerId || usePrintersStore.getState().activePrinterId
+        if (!activePrinterId) {
+          console.log('SerialStore: Cannot process bed mesh data - no active printer')
+          appendSerialLog('Cannot process bed mesh data - no active printer', 'err')
+          return
+        }
+        
+        appendSerialLog(`Processing ${rawData.length} bed mesh data points...`, 'sys')
+        
+        if (rawData.length === 0) {
+          appendSerialLog('No bed mesh data to process', 'sys')
+          return
+        }
 
         let gridSize = { x: 0, y: 0 }
         const meshRows = []
@@ -468,7 +531,22 @@ const useSerialStore = create(
             }
             
             console.log('Processing G29 W mesh points with grid size:', gridSize, 'and', meshPoints.length, 'points')
-            updateBedMesh({ data: meshPoints, gridSize })
+            appendSerialLog(`Processing G29 W mesh points: ${gridSize.x}x${gridSize.y} grid with ${meshPoints.length} points`, 'sys')
+            
+            // Convert mesh points to 2D array format
+            const mesh2D = []
+            for (let j = 0; j < gridSize.y; j++) {
+              const row = []
+              for (let i = 0; i < gridSize.x; i++) {
+                const point = meshPoints.find(p => p.i === i && p.j === j)
+                row.push(point ? point.z : 0)
+              }
+              mesh2D.push(row)
+            }
+            
+            console.log('Converted mesh to 2D array:', mesh2D)
+            appendSerialLog(`Converted mesh to 2D array: ${gridSize.x}x${gridSize.y}`, 'sys')
+            updateBedMesh({ data: mesh2D, gridSize }, activePrinterId)
             appendSerialLog(`Bed leveling data loaded: ${gridSize.x}x${gridSize.y} grid with ${meshPoints.length} points`, 'sys')
           } else if (meshRows.length > 0) {
             // Process traditional mesh rows
@@ -490,7 +568,7 @@ const useSerialStore = create(
             }
             
             console.log('Processing mesh with grid size:', gridSize, 'and', meshRows.length, 'rows')
-            updateBedMesh({ data: meshRows, gridSize })
+            updateBedMesh({ data: meshRows, gridSize }, activePrinterId)
             appendSerialLog(`Bed leveling data loaded: ${gridSize.x}x${gridSize.y} grid with ${meshRows.length} points`, 'sys')
           }
           
@@ -507,6 +585,7 @@ const useSerialStore = create(
           }
         } else if (rawData.length > 0) {
           console.log('Insufficient bed mesh data to process:', { gridSize, meshRows: meshRows.length, meshPoints: meshPoints.length, hasLevelingComplete })
+          appendSerialLog(`Insufficient bed mesh data: gridSize=${gridSize.x}x${gridSize.y}, meshRows=${meshRows.length}, meshPoints=${meshPoints.length}, hasLevelingComplete=${hasLevelingComplete}`, 'sys')
         }
       }
 
@@ -514,11 +593,83 @@ const useSerialStore = create(
         const state = get()
         if (state.status === 'connected' && state.port?.writable) {
           try {
-            appendSerialLog('Processing collected bed level data...', 'sys')
-            // Don't send M503 again - just process existing data
-            processBedMeshData()
+            appendSerialLog('Fetching bed level data from printer...', 'sys')
+            
+            // Clear existing raw data and M503 response
+            set({ 
+              bedMesh: { 
+                ...state.bedMesh, 
+                rawData: [] 
+              },
+              m503Response: []
+            }, false, 'clearBedMeshAndM503Data')
+            
+            // Send M503 to get current bed leveling data
+            await sendCommand('M503')
+            
+            // Wait for response and then process
+            setTimeout(() => {
+              const currentState = get()
+              const activePrinterId = usePrintersStore.getState().activePrinterId
+              
+              appendSerialLog(`M503 response captured: ${currentState.m503Response?.length || 0} lines`, 'sys')
+              
+              // Log the actual M503 response for debugging
+              if (currentState.m503Response && currentState.m503Response.length > 0) {
+                appendSerialLog('M503 Response Details:', 'sys')
+                currentState.m503Response.forEach((line, index) => {
+                  if (line.includes('Bed') || line.includes('Mesh') || line.includes('G29') || line.includes('M420') || line.includes('GRID')) {
+                    appendSerialLog(`  ${index + 1}: ${line}`, 'sys')
+                  }
+                })
+                
+                const parsedSettings = parseM503Output(currentState.m503Response.join('\n'))
+                appendSerialLog(`Parsed M503 settings: ${Object.keys(parsedSettings).join(', ')}`, 'sys')
+                
+                if (parsedSettings.bedLeveling) {
+                  appendSerialLog(`Found bed leveling settings: ${Object.keys(parsedSettings.bedLeveling).join(', ')}`, 'sys')
+                  
+                  // Log specific bed leveling details
+                  if (parsedSettings.bedLeveling.enabled !== undefined) {
+                    appendSerialLog(`  Bed Leveling Enabled: ${parsedSettings.bedLeveling.enabled}`, 'sys')
+                  }
+                  if (parsedSettings.bedLeveling.gridX !== undefined) {
+                    appendSerialLog(`  Grid X Points: ${parsedSettings.bedLeveling.gridX}`, 'sys')
+                  }
+                  if (parsedSettings.bedLeveling.gridY !== undefined) {
+                    appendSerialLog(`  Grid Y Points: ${parsedSettings.bedLeveling.gridY}`, 'sys')
+                  }
+                  if (parsedSettings.bedLeveling.mesh && parsedSettings.bedLeveling.mesh.length > 0) {
+                    appendSerialLog(`  Mesh Points: ${parsedSettings.bedLeveling.mesh.length}`, 'sys')
+                  }
+                  
+                  // Store bed leveling settings in printer store
+                  try {
+                    usePrintersStore.getState().updatePrinterSettings(activePrinterId, {
+                      bedLeveling: parsedSettings.bedLeveling
+                    })
+                    appendSerialLog('Bed leveling settings stored successfully', 'sys')
+                  } catch (error) {
+                    appendSerialLog(`Error storing bed leveling settings: ${error.message}`, 'err')
+                  }
+                } else {
+                  appendSerialLog('No bed leveling settings found in M503 response', 'sys')
+                }
+              } else {
+                appendSerialLog('No M503 response captured - printer may not have responded', 'sys')
+              }
+              
+              // Process any collected bed mesh data
+              appendSerialLog('Processing collected bed mesh data...', 'sys')
+              processBedMeshData(activePrinterId)
+              appendSerialLog('Bed level data processing completed', 'sys')
+              
+              // Clear M503 response after processing
+              set({ m503Response: [] }, false, 'clearM503Response')
+            }, 5000) // Wait 5 seconds for M503 response
+            
           } catch (e) {
-            appendSerialLog(`Failed to process bed level data: ${e.message}`, 'err')
+            appendSerialLog(`Failed to fetch bed level data: ${e.message}`, 'err')
           }
         }
       }
@@ -543,12 +694,19 @@ const useSerialStore = create(
               }
             }), false, 'clearBedMesh')
             
+            // CRITICAL: Run auto-homing first to prevent belt damage
+            appendSerialLog('Running auto-homing sequence (G28) before bed leveling...', 'sys')
+            appendSerialLog('This ensures proper positioning and prevents belt grinding.', 'sys')
+            await sendCommand('G28')
+            appendSerialLog('Auto-homing completed. Starting bed leveling...', 'sys')
+            
             // Run G29 (automatic bed leveling)
             await sendCommand('G29')
             
             // Wait longer for G29 to complete, then process the data
             setTimeout(() => {
-              processBedMeshData()
+              const activePrinterId = usePrintersStore.getState().activePrinterId
+              processBedMeshData(activePrinterId)
             }, 30000) // 30 seconds for G29 to complete
             
           } catch (e) {
@@ -567,6 +725,38 @@ const useSerialStore = create(
             return logAge < maxAge
           })
         }), false, 'cleanupOldLogs')
+      }
+
+      // Save printer data when disconnecting
+      const savePrinterDataOnDisconnect = async (printerId, state) => {
+        try {
+          const printersStore = usePrintersStore.getState()
+          const printer = printersStore.printers.find(p => p.id === printerId)
+          if (!printer) return
+
+          // Save current settings and data
+          const updatedPrinter = {
+            ...printer,
+            printerSettings: {
+              ...printer.printerSettings,
+              ...state.printerSettings,
+              lastUpdated: new Date().toISOString()
+            },
+            bedMesh: state.bedMesh,
+            temperatures: state.temperatures,
+            position: state.position
+          }
+
+          // Update printer in store
+          printersStore.updatePrinter(printerId, updatedPrinter)
+          
+          // Save global parameters if any
+          if (Object.keys(state.printerSettings || {}).length > 0) {
+            saveGlobalParameters(printerId, 'disconnect', state.printerSettings)
+          }
+        } catch (e) {
+          console.error('Error saving printer data on disconnect:', e)
+        }
       }
 
       const closeReader = async () => {
@@ -734,7 +924,9 @@ const useSerialStore = create(
                           line.includes('M204') || line.includes('M205') || line.includes('M206') ||
                           line.includes('M420') || line.includes('G29 W') || line.includes('M145') ||
                           line.includes('M301') || line.includes('M304') || line.includes('M413') ||
-                          line.includes('M851') || line.includes('M900') || line.includes('M603')) {
+                          line.includes('M851') || line.includes('M900') || line.includes('M603') ||
+                          line.includes('GRID_MAX_POINTS') || line.includes('Bed Leveling') ||
+                          line.includes('Bilinear Leveling') || line.includes('Mesh Bed Leveling')) {
                         
                         // Store M503 response lines for parsing
                         set((state) => ({
@@ -845,6 +1037,12 @@ const useSerialStore = create(
                 // Then fetch bed level data
                 await get().fetchBedLevel()
                 
+                // Load existing bed mesh data for this printer
+                const activePrinterId = usePrintersStore.getState().activePrinterId
+                if (activePrinterId) {
+                  get().loadBedMeshFromPrinter(activePrinterId)
+                }
+                
                 appendSerialLog('Printer configuration and bed level data fetched automatically', 'sys')
               } catch (error) {
                 appendSerialLog(`Error fetching printer data: ${error.message}`, 'err')
@@ -897,10 +1095,31 @@ const useSerialStore = create(
           }
           
           const currentPort = state.port
+          // Mark manual disconnect to prevent unintended reconnects
+          if (!force) {
+            set({ manualDisconnect: true }, false, 'disconnect/manualFlag')
+          }
+          const activePrinter = state.activePrinter
+          
+          // Save any pending data before disconnecting
+          if (activePrinter?.id && state.status === 'connected') {
+            try {
+              await savePrinterDataOnDisconnect(activePrinter.id, state)
+              appendSerialLog('Saved printer data before disconnect', 'sys')
+            } catch (e) {
+              appendSerialLog(`Warning: Failed to save printer data: ${e.message}`, 'sys')
+            }
+          }
           
           set({ port: null, status: 'disconnected', m503SentOnConnection: false }, false, 'disconnect')
           
           try {
+            // Stop all active executions
+            if (currentExecutionAbortController) {
+              currentExecutionAbortController.abort()
+              currentExecutionAbortController = null
+            }
+
             // Temperature monitoring is handled by individual components
 
             if (readLoopAbortRef) {
@@ -934,6 +1153,12 @@ const useSerialStore = create(
         try {
           set({ error: null }, false, 'connect/clearError')
           
+          // Block auto/connect attempts after a manual disconnect unless explicitly user-initiated
+          if (state.manualDisconnect && !opts.userInitiated && !opts.overrideManual) {
+            appendSerialLog('Connect attempt blocked due to manual disconnect. Use the Connect button to re-enable.', 'sys')
+            return
+          }
+          
           if (!('serial' in navigator)) {
             throw new Error('Web Serial API not supported in this browser')
           }
@@ -946,6 +1171,10 @@ const useSerialStore = create(
           }
 
           isConnectingRef = true
+          // Clear manual disconnect when user initiates connect
+          if (state.manualDisconnect) {
+            set({ manualDisconnect: false }, false, 'connect/clearManualFlag')
+          }
           await disconnect(true)
           set({ port: null, status: 'connecting' }, false, 'connect/setConnecting')
           
@@ -1211,6 +1440,18 @@ const useSerialStore = create(
           if (isConnectionError(e)) {
             try {
               const st = get()
+              const activePrinter = st.activePrinter
+              
+              // Save current data before disconnecting
+              if (activePrinter?.id) {
+                try {
+                  await savePrinterDataOnDisconnect(activePrinter.id, st)
+                  appendSerialLog('Saved printer data due to connection loss', 'sys')
+                } catch (saveError) {
+                  appendSerialLog(`Warning: Failed to save data on disconnect: ${saveError.message}`, 'sys')
+                }
+              }
+              
               if (st.isStreamingProgram) {
                 set({ isStreamingProgram: false }, false, 'connectionLostStopStream')
                 if (st.currentExecution) {
@@ -1690,6 +1931,44 @@ const useSerialStore = create(
         }
       }
 
+      // Set up USB disconnect detection
+      if (typeof window !== 'undefined') {
+        // Listen for USB disconnect events
+        window.addEventListener('beforeunload', async () => {
+          const state = get()
+          if (state.status === 'connected' && state.activePrinter?.id) {
+            try {
+              await savePrinterDataOnDisconnect(state.activePrinter.id, state)
+            } catch (e) {
+              console.warn('Failed to save data on page unload:', e)
+            }
+          }
+        })
+
+        // Listen for visibility change (tab switching) to detect USB disconnect
+        document.addEventListener('visibilitychange', async () => {
+          if (document.visibilityState === 'visible') {
+            const state = get()
+            if (state.status === 'connected') {
+              // Check if connection is still valid by trying to send a simple command
+              try {
+                await get().sendCommand('M115', { timeout: 2000 })
+              } catch (e) {
+                // Connection lost, save data and disconnect
+                if (state.activePrinter?.id) {
+                  try {
+                    await savePrinterDataOnDisconnect(state.activePrinter.id, state)
+                  } catch (saveError) {
+                    console.warn('Failed to save data on USB disconnect:', saveError)
+                  }
+                }
+                await get().disconnect(true)
+              }
+            }
+          }
+        })
+      }
+
       return {
         // State
         port: null,
@@ -1699,6 +1978,7 @@ const useSerialStore = create(
         isConnecting: false,
         error: null,
         serialLogs: [],
+        alerts: [],
         
         // Temperature state
         temperatures: {
@@ -1755,6 +2035,7 @@ const useSerialStore = create(
         setWriterLock: (lock) => set({ writerLock: lock }, false, 'setWriterLock'),
         setWriterPromise: (promise) => set({ writerPromise: promise }, false, 'setWriterPromise'),
         clearLogs: () => set({ serialLogs: [] }, false, 'clearLogs'),
+        clearAlerts: () => set({ alerts: [] }, false, 'clearAlerts'),
         reset: () => set({
           port: null,
           status: 'disconnected',
@@ -1800,9 +2081,97 @@ const useSerialStore = create(
           const state = get()
           if (state.bedMesh.rawData && state.bedMesh.rawData.length > 0) {
             appendSerialLog('Manually processing collected bed mesh data...', 'sys')
-            processBedMeshData()
+            const activePrinterId = usePrintersStore.getState().activePrinterId
+            processBedMeshData(activePrinterId)
           } else {
             appendSerialLog('No bed mesh data collected to process. Try fetching bed level data first.', 'sys')
+          }
+        },
+        
+        // Fetch bed mesh data using G29 W command
+        fetchBedMeshData: async () => {
+          const state = get()
+          if (state.status === 'connected' && state.port?.writable) {
+            try {
+              appendSerialLog('Fetching bed mesh data using G29 W...', 'sys')
+              appendSerialLog('This will retrieve the current bed mesh data from the printer', 'sys')
+              
+              // Clear existing raw data
+              set({ 
+                bedMesh: { 
+                  ...state.bedMesh, 
+                  rawData: [] 
+                }
+              }, false, 'clearBedMeshRawData')
+              
+              // Send G29 W to get bed mesh data
+              await sendCommand('G29 W')
+              
+              // Wait for response and then process
+              setTimeout(() => {
+                const currentState = get()
+                const activePrinterId = usePrintersStore.getState().activePrinterId
+                
+                appendSerialLog(`G29 W response captured: ${currentState.bedMesh.rawData?.length || 0} mesh points`, 'sys')
+                
+                // Log the mesh data details
+                if (currentState.bedMesh.rawData && currentState.bedMesh.rawData.length > 0) {
+                  appendSerialLog('G29 W Mesh Data Details:', 'sys')
+                  currentState.bedMesh.rawData.forEach((point, index) => {
+                    if (index < 10) { // Log first 10 points
+                      appendSerialLog(`  Point ${index + 1}: I${point.i} J${point.j} Z${point.z}`, 'sys')
+                    }
+                  })
+                  if (currentState.bedMesh.rawData.length > 10) {
+                    appendSerialLog(`  ... and ${currentState.bedMesh.rawData.length - 10} more points`, 'sys')
+                  }
+                } else {
+                  appendSerialLog('No mesh data captured from G29 W response', 'sys')
+                }
+                
+                processBedMeshData(activePrinterId)
+                appendSerialLog('Bed mesh data processing completed', 'sys')
+              }, 3000) // Wait 3 seconds for G29 W response
+              
+            } catch (e) {
+              appendSerialLog(`Failed to fetch bed mesh data: ${e.message}`, 'err')
+            }
+          }
+        },
+        
+        // Load bed mesh data from printer settings
+        loadBedMeshFromPrinter: (printerId) => {
+          const printersState = usePrintersStore.getState()
+          const printer = printersState.printers.find(p => p.id === printerId)
+          
+          if (printer && printer.settings?.bedLeveling?.mesh) {
+            const bedLeveling = printer.settings.bedLeveling
+            set((state) => ({
+              bedMesh: {
+                data: bedLeveling.mesh,
+                gridSize: bedLeveling.gridSize || { x: 5, y: 5 },
+                min: bedLeveling.min || 0,
+                max: bedLeveling.max || 0,
+                range: bedLeveling.range || 0,
+                timestamp: bedLeveling.timestamp || Date.now(),
+                rawData: state.bedMesh.rawData
+              }
+            }), false, 'loadBedMeshFromPrinter')
+            appendSerialLog(`Loaded bed mesh data for printer ${printerId}`, 'sys')
+          } else {
+            // Clear bed mesh if no data found for this printer
+            set((state) => ({
+              bedMesh: {
+                data: [],
+                gridSize: { x: 0, y: 0 },
+                min: 0,
+                max: 0,
+                range: 0,
+                timestamp: 0,
+                rawData: state.bedMesh.rawData
+              }
+            }), false, 'clearBedMeshForPrinter')
+            appendSerialLog(`No bed mesh data found for printer ${printerId}`, 'sys')
           }
         },
         
@@ -1900,21 +2269,58 @@ const useSerialStore = create(
                     if (activePrinterId && parsedSettings) {
                       usePrintersStore.getState().updatePrinterSettings(activePrinterId, parsedSettings)
                       appendSerialLog(`Printer settings stored for printer ${activePrinterId}`, 'sys')
-                    } else {
-                      console.log('SerialStore: Cannot store settings - activePrinterId:', activePrinterId, 'parsedSettings:', parsedSettings)
-                      appendSerialLog(`Cannot store settings - activePrinterId: ${activePrinterId}, parsedSettings: ${!!parsedSettings}`, 'err')
+                      
+                      // Update global parameters with extracted values
+                      try {
+                        const currentGlobalParams = loadGlobalParameters(activePrinterId)
+                        
+                        // Update probe Z offset if available
+                        if (parsedSettings.zProbeOffset?.z !== undefined) {
+                          currentGlobalParams.probeZOffset = parsedSettings.zProbeOffset.z
+                          appendSerialLog(`Updated global probe Z offset: ${parsedSettings.zProbeOffset.z}mm`, 'sys')
+                        }
+                        
+                        // Update bed level grid settings if available
+                        if (parsedSettings.bedLeveling?.gridX !== undefined) {
+                          currentGlobalParams.bedLevelGridX = parsedSettings.bedLeveling.gridX
+                          appendSerialLog(`Updated global bed level grid X: ${parsedSettings.bedLeveling.gridX}`, 'sys')
+                        }
+                        
+                        if (parsedSettings.bedLeveling?.gridY !== undefined) {
+                          currentGlobalParams.bedLevelGridY = parsedSettings.bedLeveling.gridY
+                          appendSerialLog(`Updated global bed level grid Y: ${parsedSettings.bedLeveling.gridY}`, 'sys')
+                        }
+                        
+                        // Update E-steps if available
+                        if (parsedSettings.stepsPerUnit?.e !== undefined) {
+                          currentGlobalParams.currentEsteps = parsedSettings.stepsPerUnit.e
+                          appendSerialLog(`Updated global E-steps: ${parsedSettings.stepsPerUnit.e}`, 'sys')
+                        }
+                        
+                        // Save updated global parameters
+                        saveGlobalParameters(activePrinterId, currentGlobalParams)
+                        appendSerialLog(`Global parameters updated for printer ${activePrinterId}`, 'sys')
+                        
+                      } catch (error) {
+                        console.log('SerialStore: Error updating global parameters:', error)
+                        appendSerialLog(`Error updating global parameters: ${error.message}`, 'err')
+                      }
+                      } else {
+                        console.log('SerialStore: Cannot store settings - activePrinterId:', activePrinterId, 'parsedSettings:', parsedSettings)
+                        appendSerialLog(`Cannot store settings - activePrinterId: ${activePrinterId}, parsedSettings: ${!!parsedSettings}`, 'err')
+                      }
+                    } catch (error) {
+                      console.log('SerialStore: Error storing printer settings:', error)
+                      appendSerialLog(`Error storing printer settings: ${error.message}`, 'err')
                     }
-                  } catch (error) {
-                    console.log('SerialStore: Error storing printer settings:', error)
-                    appendSerialLog(`Error storing printer settings: ${error.message}`, 'err')
-                  }
-                  
-                  // Clear M503 response after processing
-                  set({ m503Response: [] }, false, 'clearM503Response')
+                    
+                    // Clear M503 response after processing
+                    set({ m503Response: [] }, false, 'clearM503Response')
                 }
                 
                 // Try to process bed mesh data
-                processBedMeshData()
+                const activePrinterId = usePrintersStore.getState().activePrinterId
+                processBedMeshData(activePrinterId)
               }, 5000) // Wait 5 seconds for all responses
               
             } catch (e) {

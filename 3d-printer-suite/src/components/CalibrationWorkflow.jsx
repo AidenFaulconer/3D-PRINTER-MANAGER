@@ -20,6 +20,8 @@ import {
 import useSerialStore from '../stores/serialStore'
 import usePrintersStore from '../stores/printersStore'
 import { calibrationSteps } from '../data/calibrationSteps'
+import { getParameterHelpText } from '../data/parameterHelpText'
+import { getStepNumberDisplay } from '../utils/calibrationNumbering'
 import Input from './Input'
 
 // Create custom workflow with bed leveling as first step
@@ -66,6 +68,7 @@ const GLOBAL_PARAMETERS = {
   firstLayerSpeed: true
 }
 import TemperatureChart from './controls/TemperatureChart'
+import BedMeshVisualization from './BedMeshVisualization'
 // Dynamic imports for 3D viewers to reduce bundle size
 const GcodeViewer3D = React.lazy(() => import('./GcodeViewer3D').then(module => ({ default: module.GcodeViewer3D })))
 const SimpleGcodeViewer3D = React.lazy(() => import('./SimpleGcodeViewer3D').then(module => ({ default: module.SimpleGcodeViewer3D })))
@@ -97,9 +100,18 @@ const CalibrationWorkflow = () => {
     const saved = sessionStorage.getItem('calibration_generatedGcode')
     return saved || ''
   })
+  // Steps that do not produce printable toolpaths (prefer text view)
+  const isNonPrintingStep = (stepId) => {
+    return stepId === 'pid-autotune' || stepId === 'bed-leveling'
+  }
+
   const [gcodeViewMode, setGcodeViewMode] = useState(() => {
     const saved = sessionStorage.getItem('calibration_gcodeViewMode')
-    return saved || '3d' // 'text' or '3d'
+    if (saved) return saved
+    const initialStep = workflowSteps[
+      (typeof window !== 'undefined' && parseInt(sessionStorage.getItem('calibration_currentStepIndex') || '0')) || 0
+    ]
+    return initialStep && isNonPrintingStep(initialStep.id) ? 'text' : '3d'
   })
   const [executionProgress, setExecutionProgress] = useState(() => {
     const saved = sessionStorage.getItem('calibration_executionProgress')
@@ -115,6 +127,26 @@ const CalibrationWorkflow = () => {
   })
   const [isConnected, setIsConnected] = useState(false)
   const [globalParams, setGlobalParams] = useState({})
+  
+  // Icon map for global parameter keys (reuse existing imported icons)
+  const globalParamIcons = useMemo(() => ({
+    hotendTemp: Thermometer,
+    bedTemp: Thermometer,
+    nozzleDiameter: Ruler,
+    layerHeight: Ruler,
+    printSpeed: Zap,
+    retractionDistance: RotateCcw,
+    retractionSpeed: Zap,
+    primeSpeed: Zap,
+    flowRate: Settings,
+    wallThickness: Ruler,
+    enableABL: Settings,
+    firstLayerSpeed: Zap,
+    probeZOffset: Ruler,
+    bedLevelGridX: Settings,
+    bedLevelGridY: Settings,
+    currentEsteps: Ruler
+  }), [])
   
   // Ref to track if parameters have been initialized for current step
   const initializedStepRef = useRef(null)
@@ -171,6 +203,13 @@ const CalibrationWorkflow = () => {
     sessionStorage.setItem('calibration_gcodeViewMode', gcodeViewMode)
   }, [gcodeViewMode])
 
+  // When step changes, automatically prefer text view for non-printing steps
+  useEffect(() => {
+    if (currentStep && isNonPrintingStep(currentStep.id) && gcodeViewMode !== 'text') {
+      setGcodeViewMode('text')
+    }
+  }, [currentStepIndex])
+
   // Load global parameters when printer changes
   useEffect(() => {
     if (activePrinter?.id) {
@@ -179,6 +218,15 @@ const CalibrationWorkflow = () => {
       console.log('Loaded global parameters for display:', globalParams)
     }
   }, [activePrinter?.id])
+
+  // Load bed mesh when navigating to bed leveling step
+  useEffect(() => {
+    if (currentStep?.id === 'bed-leveling' && activePrinter?.id) {
+      const loadBedMeshFromPrinter = useSerialStore.getState().loadBedMeshFromPrinter
+      loadBedMeshFromPrinter(activePrinter.id)
+      console.log('Loading bed mesh for bed leveling step')
+    }
+  }, [currentStep?.id, activePrinter?.id])
 
   // Initialize parameters for current step (only when step changes)
   useEffect(() => {
@@ -565,6 +613,33 @@ const CalibrationWorkflow = () => {
   }
 
   const getStepStatus = (stepId) => {
+    // Auto inference using serial store data
+    try {
+      const serialState = useSerialStore.getState()
+      const printer = serialState.activePrinter
+      const settings = printer?.printerSettings || {}
+      const bedMesh = serialState.bedMesh
+
+      // Heuristics per step
+      if (stepId === 'pid-autotune') {
+        const hot = settings?.pid?.hotend
+        const bed = settings?.pid?.bed
+        const looksTuned = hot && bed && hot.p > 0 && hot.i > 0 && hot.d >= 0 && bed.p > 0 && bed.i > 0 && bed.d >= 0
+        if (looksTuned) return 'review' // previously tuned; not guaranteed perfect
+      }
+      if (stepId === 'bed-leveling') {
+        const hasMesh = Array.isArray(bedMesh?.data) && bedMesh.data.length > 0
+        const meshFromSettings = Array.isArray(settings?.bedLeveling?.mesh) && settings.bedLeveling.mesh.length > 0
+        if (hasMesh || meshFromSettings) return 'review'
+      }
+      if (stepId === 'extruder-esteps') {
+        const esteps = settings?.currentEsteps || settings?.esteps || serialState?.printerState?.esteps
+        if (esteps && typeof esteps === 'number' && esteps > 0) return 'review'
+      }
+    } catch (e) {
+      // fall through to manual status
+    }
+
     if (workflowResults[stepId]?.completed) return 'completed'
     if (stepResults[stepId]) return 'review'
     if (currentStepIndex > workflowSteps.findIndex(s => s.id === stepId)) return 'pending'
@@ -708,7 +783,10 @@ const CalibrationWorkflow = () => {
                   {status === 'completed' ? <CheckCircle className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
                 </div>
                 <div className="ml-3">
-                  <div className="text-sm font-medium">{step.name}</div>
+                  <div className="text-sm font-medium">
+                    <span className="text-xs text-gray-400 mr-2">{getStepNumberDisplay(step.id)}</span>
+                    {step.name}
+                  </div>
                   <div className="text-xs text-gray-500">
                     {status === 'completed' ? 'Completed' :
                      status === 'review' ? 'Review Results' :
@@ -745,6 +823,76 @@ const CalibrationWorkflow = () => {
                     <li key={index}>{instruction}</li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {/* Bed leveling: clarify turns to mm conversion */}
+            {currentStep.id === 'bed-leveling' && (
+              <div className="mt-4 bg-gray-50 border border-gray-200 rounded p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-medium text-gray-800">Bed Leveling Knob Adjustment Guide</h3>
+                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                    <span>Store per printer</span>
+                  </div>
+                </div>
+                
+                <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded">
+                  <p className="text-xs text-blue-800 font-medium mb-1">What is "one turn"?</p>
+                  <p className="text-xs text-blue-700">
+                    One complete 360° rotation of the bed leveling knob/screw. 
+                    This is the distance the bed moves up or down when you turn the knob all the way around once.
+                  </p>
+                </div>
+
+                <div className="flex flex-col md:flex-row md:items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm text-gray-700">Screw pitch (mm per full 360° turn):</label>
+                    <select
+                      className="border border-gray-300 rounded px-2 py-1 text-sm bg-white"
+                      value={globalParams.bedScrewPitch ?? 0.5}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value)
+                        if (activePrinter?.id) {
+                          updateGlobalParameters(activePrinter.id, currentStep.id, { bedScrewPitch: val })
+                          setGlobalParams(prev => ({ ...prev, bedScrewPitch: val }))
+                        }
+                      }}
+                    >
+                      <option value={0.5}>0.50mm (M3 typical)</option>
+                      <option value={0.7}>0.70mm (M4 typical)</option>
+                      <option value={0.8}>0.80mm (M5 typical)</option>
+                      <option value={1}>1.00mm</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-gray-700">
+                    {[
+                      { label: '1/16 turn (22.5°)', frac: 1/16 },
+                      { label: '1/8 turn (45°)', frac: 1/8 },
+                      { label: '1/4 turn (90°)', frac: 1/4 },
+                      { label: '1/2 turn (180°)', frac: 1/2 },
+                      { label: '3/4 turn (270°)', frac: 3/4 },
+                      { label: '1 full turn (360°)', frac: 1 }
+                    ].map(({ label, frac }) => {
+                      const pitch = globalParams.bedScrewPitch ?? 0.5
+                      const mm = (pitch * frac).toFixed(3)
+                      return (
+                        <div key={label} className="bg-white border border-gray-200 rounded px-2 py-1 flex items-center justify-between">
+                          <span className="text-xs">{label}</span>
+                          <span className="font-mono text-xs">{mm}mm</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+                
+                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                  <div className="text-xs text-yellow-800 space-y-1">
+                    <div><strong>Typical direction:</strong></div>
+                    <div>↻ <strong>Clockwise</strong> = Lower the bed (bed moves away from nozzle)</div>
+                    <div>↺ <strong>Counter-clockwise</strong> = Raise the bed (bed moves toward nozzle)</div>
+                    <div className="mt-1 opacity-90">Note: Some printers invert this behavior depending on spring orientation and screw threading. Make a small test adjustment to confirm.</div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -801,35 +949,49 @@ const CalibrationWorkflow = () => {
                         initialValue={parameters[input.key] || input.defaultValue || ''}
                         className={isGlobalParam ? 'border-blue-300 bg-blue-50' : ''}
                         errorClassName="text-red-600"
+                        helpText={getParameterHelpText(input.key, currentStep.id)}
                       />
                     )
                   })}
                 </div>
               )}
 
-              {/* Global Parameters Display */}
+              {/* Global Parameters Display - Ultra Compact */}
               {activePrinter?.id && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h3 className="font-medium text-blue-900 mb-3 flex items-center gap-2">
-                    <Settings className="w-4 h-4" />
-                    Global Parameters for {activePrinter.name || activePrinter.id}
-                  </h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
-                    {Object.entries(globalParams).map(([key, value]) => (
-                      <div key={key} className="flex justify-between items-center">
-                        <span className="text-blue-700 font-medium">{key}:</span>
-                        <span className="text-blue-900 font-mono">{value}</span>
-                      </div>
-                    ))}
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded p-1.5">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <h3 className="text-xs font-medium text-blue-900 dark:text-blue-100 flex items-center gap-1">
+                      <Settings className="w-2.5 h-2.5" />
+                      Global Parameters
+                    </h3>
+                    <span className="text-xs text-blue-600 dark:text-blue-400">{activePrinter.name || `P${activePrinter.id}`}</span>
                   </div>
-                  <p className="text-xs text-blue-600 mt-2">
-                    These parameters persist across all calibration steps and are saved per printer.
+                  <div className="grid grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-0.5 text-xs">
+                    {Object.entries(globalParams).map(([key, value]) => {
+                      const Icon = globalParamIcons[key] || Settings
+                      return (
+                        <div key={key} className="flex justify-between items-center min-w-0 px-1 py-0.5 bg-white dark:bg-gray-800 rounded">
+                          <span className="flex items-center gap-1 text-blue-700 dark:text-blue-300 font-medium truncate mr-1 text-xs">
+                            <Icon className="w-3 h-3" />
+                            {key}:
+                          </span>
+                          <span className="text-blue-900 dark:text-blue-100 font-mono text-xs">{value}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5 opacity-75">
+                    Persist across steps • Saved per printer
                   </p>
                 </div>
               )}
 
-              {/* Generated G-code Preview */}
-              {generatedGcode && (
+              {/* Bed Leveling Visualization or Generated G-code Preview */}
+              {currentStep.id === 'bed-leveling' ? (
+                <div className="space-y-4">
+                  <BedMeshVisualization showStatus={true} showActions={true} />
+                </div>
+              ) : generatedGcode && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-gray-700">Generated G-code:</h3>
