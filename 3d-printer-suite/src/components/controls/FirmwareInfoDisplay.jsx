@@ -8,6 +8,7 @@ const FirmwareInfoDisplay = React.memo(() => {
   
   // Use selective subscription to prevent app-wide re-renders
   const logCount = useSerialStore(state => state.serialLogs?.length || 0)
+  const hasM115Fetched = useSerialStore(state => state.printerCapabilitiesFetched)
   const [m115Logs, setM115Logs] = useState([])
   
   useEffect(() => {
@@ -24,6 +25,7 @@ const FirmwareInfoDisplay = React.memo(() => {
     setM115Logs(newM115Logs)
   }, [logCount])
   const sendCommand = useSerialStore(state => state.sendCommand)
+  const setCapabilitiesFetched = useSerialStore(state => state.setPrinterCapabilitiesFetched)
   const serialStatus = useSerialStore(state => state.status)
 
   // Parse M115 responses only when M115 logs change
@@ -51,6 +53,7 @@ const FirmwareInfoDisplay = React.memo(() => {
       }
       
       setFirmwareData(firmwareInfo)
+      setCapabilitiesFetched(true)
       setIsVisible(true)
     }
   }, [m115Logs])

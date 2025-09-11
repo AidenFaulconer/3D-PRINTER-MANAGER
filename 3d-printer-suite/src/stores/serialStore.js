@@ -53,7 +53,11 @@ const useSerialStore = create(
             const isRx = type === 'rx'
             const isBusy = /\bbusy\b/i.test(msgStr)
             const isEcho = /^\s*echo:/i.test(msgStr)
-            if (isRx && (isBusy || isEcho)) {
+            // Only toast echo lines that indicate actionable states/errors, not config dumps
+            const isActionableEcho = isEcho && /(busy|wait\s*for\s*user|error|err:|kill|halt|resend|paused|heating\s*failed|mintemp|maxtemp|thermal|probe|homing|endstop)/i.test(msgStr)
+            const stNow = get()
+            const allowToast = stNow.status === 'connected' && !stNow.isConnecting
+            if (allowToast && isRx && (isBusy || isActionableEcho)) {
               const id = `${now}-${Math.random().toString(36).slice(2, 7)}`
               const alertItem = {
                 id,
@@ -1950,9 +1954,9 @@ const useSerialStore = create(
           if (document.visibilityState === 'visible') {
             const state = get()
             if (state.status === 'connected') {
-              // Check if connection is still valid by trying to send a simple command
+              // Check if connection is still valid with a lightweight position query (avoid M115 spam)
               try {
-                await get().sendCommand('M115', { timeout: 2000 })
+                await get().sendCommand('M114', { timeout: 2000 })
               } catch (e) {
                 // Connection lost, save data and disconnect
                 if (state.activePrinter?.id) {
@@ -2014,9 +2018,12 @@ const useSerialStore = create(
         // Global execution tracking for calibration workflow
         activeExecution: null, // { id, type, stepName, progress: { sent, total }, startTime, status }
         executionHistory: [], // Array of completed executions
+        // Capability fetch guard
+        printerCapabilitiesFetched: false,
 
         // Actions
         setPort: (port) => set({ port }, false, 'setPort'),
+        setPrinterCapabilitiesFetched: (v) => set({ printerCapabilitiesFetched: !!v }, false, 'setCapabilitiesFetched'),
         setStatus: (status) => set({ status }, false, 'setStatus'),
         setBaudRate: (baudRate) => set({ baudRate }, false, 'setBaudRate'),
         setAutoDetect: (autoDetect) => set({ autoDetect }, false, 'setAutoDetect'),

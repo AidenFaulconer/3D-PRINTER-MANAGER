@@ -14,9 +14,10 @@ import {
 } from 'lucide-react'
 import useSerialStore from '../stores/serialStore'
 import usePrintersStore from '../stores/printersStore'
+import { loadGlobalParameters } from '../utils/ParameterTracker'
 
 // 2D Canvas Visualization Component
-const BedMesh2D = ({ meshData, colorScheme, showValues, showGrid }) => {
+const BedMesh2D = ({ meshData, colorScheme, showValues, showGrid, screwPitch }) => {
   const canvasRef = useRef(null)
   const [dimensions, setDimensions] = useState({ width: 600, height: 400 })
 
@@ -165,6 +166,18 @@ const BedMesh2D = ({ meshData, colorScheme, showValues, showGrid }) => {
         <div className="text-sm text-gray-600">
           Range: {processedData.minZ.toFixed(3)}mm to {processedData.maxZ.toFixed(3)}mm
         </div>
+      </div>
+      {/* Knob guidance (compact) */}
+      <div className="text-[11px] text-gray-700 bg-gray-50 border border-gray-200 rounded px-2 py-1 inline-flex items-center gap-3">
+        <span className="font-medium">Per 1/8 turn:</span>
+        <span className="flex items-center gap-1">
+          <span className="text-green-700">↺</span>
+          <span>+{(screwPitch/8).toFixed(3)}mm</span>
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="text-red-700">↻</span>
+          <span>−{(screwPitch/8).toFixed(3)}mm</span>
+        </span>
       </div>
       
       <div className="flex justify-center">
@@ -471,6 +484,11 @@ const BedMeshVisualization = ({ showStatus = true, showActions = true }) => {
     const activePrinter = state.printers.find(p => p.id === state.activePrinterId)
     return activePrinter?.printerSettings
   })
+  const globalParams = React.useMemo(() => {
+    if (!activePrinterId) return {}
+    try { return loadGlobalParameters(activePrinterId) } catch { return {} }
+  }, [activePrinterId])
+  const screwPitch = (printerSettings?.bedScrewPitch ?? globalParams?.bedScrewPitch ?? 0.5)
 
   const handleFetchMesh = useCallback(async () => {
     if (serialStatus !== 'connected') {
@@ -533,6 +551,11 @@ const BedMeshVisualization = ({ showStatus = true, showActions = true }) => {
             ) : (
               'No mesh data available'
             )}
+          </div>
+          <div className="mt-1 text-[11px] text-gray-700">
+            <span className="mr-2">Per 1/8 turn:</span>
+            <span className="mr-3"><span className="text-green-700">↺</span> +{(screwPitch/8).toFixed(3)}mm</span>
+            <span><span className="text-red-700">↻</span> −{(screwPitch/8).toFixed(3)}mm</span>
           </div>
         </div>
         
@@ -702,6 +725,7 @@ const BedMeshVisualization = ({ showStatus = true, showActions = true }) => {
             colorScheme={colorScheme}
             showValues={showValues}
             showGrid={showGrid}
+            screwPitch={screwPitch}
           />
         ) : (
           <BedMesh3D 
