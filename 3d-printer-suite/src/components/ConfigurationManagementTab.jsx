@@ -10,24 +10,185 @@ import {
   Search,
   Filter,
   BookOpen,
-  Zap
+  Zap,
+  Download,
+  Send,
+  HardDrive,
+  Terminal
 } from 'lucide-react'
 import useSerialStore from '../stores/serialStore'
 import usePrintersStore from '../stores/printersStore'
 import PrinterSettingsEditor from './PrinterSettingsEditor'
+import FirmwareConfig from './FirmwareConfig'
+import RemoteTerminal from './RemoteTerminal'
 
 const ConfigurationManagementTab = () => {
-  const [activeSection, setActiveSection] = useState('editor') // 'editor', 'summary', 'documentation'
+  const [activeSection, setActiveSection] = useState('editor') // 'editor', 'summary', 'documentation', 'firmware', 'terminal'
 
   const serialStatus = useSerialStore(state => state.status)
+  const sendCommand = useSerialStore(state => state.sendCommand)
 
   const activePrinterId = usePrintersStore(state => state.activePrinterId)
+  const activePrinter = usePrintersStore(state => state.printers.find(p => p.id === state.activePrinterId))
   const printerSettings = usePrintersStore(state => {
     const activePrinter = state.printers.find(p => p.id === state.activePrinterId)
     return activePrinter?.printerSettings
   })
 
   // Settings are fetched automatically on connection, no manual fetch needed
+
+  // JSON Export/Import functionality
+  const exportSettings = useCallback(() => {
+    if (!printerSettings || !activePrinter) {
+      alert('No settings available to export')
+      return
+    }
+
+    const exportData = {
+      printerName: activePrinter.name,
+      printerId: activePrinterId,
+      exportDate: new Date().toISOString(),
+      settings: printerSettings
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const filename = `printer-config_${activePrinter.name.replace(/[^a-zA-Z0-9]/g, '_')}_${timestamp}.json`
+    
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }, [printerSettings, activePrinter, activePrinterId])
+
+  const importSettings = useCallback((event) => {
+    const file = event.target.files[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const importData = JSON.parse(e.target.result)
+        
+        if (!importData.settings) {
+          alert('Invalid configuration file format')
+          return
+        }
+
+        if (confirm(`Import settings from ${importData.printerName || 'Unknown Printer'}? This will overwrite current settings.`)) {
+          // Update printer settings in store
+          usePrintersStore.getState().updatePrinter(activePrinterId, {
+            printerSettings: importData.settings
+          })
+          alert('Settings imported successfully!')
+        }
+      } catch (error) {
+        alert('Error reading configuration file: ' + error.message)
+      }
+    }
+    reader.readAsText(file)
+    
+    // Reset file input
+    event.target.value = ''
+  }, [activePrinterId])
+
+  // Send settings to printer
+  const sendSettingsToPrinter = useCallback(async () => {
+    if (serialStatus !== 'connected') {
+      alert('Please connect to printer first')
+      return
+    }
+
+    if (!printerSettings) {
+      alert('No settings available to send')
+      return
+    }
+
+    if (!confirm('This will send all configuration settings to the printer. Continue?')) {
+      return
+    }
+
+    try {
+      // Send motion settings
+      if (printerSettings.stepsPerUnit) {
+        await sendCommand(`M92 X${printerSettings.stepsPerUnit.x} Y${printerSettings.stepsPerUnit.y} Z${printerSettings.stepsPerUnit.z} E${printerSettings.stepsPerUnit.e}`)
+      }
+
+      // Send feedrate settings
+      if (printerSettings.feedrates) {
+        await sendCommand(`M203 X${printerSettings.feedrates.x} Y${printerSettings.feedrates.y} Z${printerSettings.feedrates.z} E${printerSettings.feedrates.e}`)
+      }
+
+      // Send acceleration settings
+      if (printerSettings.acceleration) {
+        await sendCommand(`M201 X${printerSettings.acceleration.max} Y${printerSettings.acceleration.max} Z${printerSettings.acceleration.max} E${printerSettings.acceleration.max}`)
+        await sendCommand(`M204 P${printerSettings.acceleration.print} R${printerSettings.acceleration.retract} T${printerSettings.acceleration.travel}`)
+      }
+
+      // Send PID settings
+      if (printerSettings.pid?.hotend) {
+        await sendCommand(`M301 P${printerSettings.pid.hotend.p} I${printerSettings.pid.hotend.i} D${printerSettings.pid.hotend.d}`)
+      }
+      if (printerSettings.pid?.bed) {
+        await sendCommand(`M304 P${printerSettings.pid.bed.p} I${printerSettings.pid.bed.i} D${printerSettings.pid.bed.d}`)
+      }
+
+      // Send bed leveling settings
+      if (printerSettings.bedLeveling) {
+        await sendCommand(`M420 S${printerSettings.bedLeveling.enabled ? 1 : 0}`)
+        if (printerSettings.bedLeveling.fadeHeight) {
+          await sendCommand(`M420 Z${printerSettings.bedLeveling.fadeHeight}`)
+        }
+      }
+
+      // Send Z probe offset
+      if (printerSettings.zProbeOffset) {
+        await sendCommand(`M851 X${printerSettings.zProbeOffset.x} Y${printerSettings.zProbeOffset.y} Z${printerSettings.zProbeOffset.z}`)
+      }
+
+      // Send home offset
+      if (printerSettings.homeOffset) {
+        await sendCommand(`M206 X${printerSettings.homeOffset.x} Y${printerSettings.homeOffset.y} Z${printerSettings.homeOffset.z}`)
+      }
+
+      // Send linear advance
+      if (printerSettings.linearAdvance) {
+        await sendCommand(`M900 K${printerSettings.linearAdvance}`)
+      }
+
+      // Send power loss recovery
+      if (printerSettings.powerLossRecovery !== undefined) {
+        await sendCommand(`M413 S${printerSettings.powerLossRecovery ? 1 : 0}`)
+      }
+
+      alert('Settings sent to printer successfully!')
+    } catch (error) {
+      alert('Error sending settings to printer: ' + error.message)
+    }
+  }, [serialStatus, printerSettings, sendCommand])
+
+  // Save settings to printer EEPROM
+  const saveSettingsToPrinter = useCallback(async () => {
+    if (serialStatus !== 'connected') {
+      alert('Please connect to printer first')
+      return
+    }
+
+    if (!confirm('This will save all current settings to the printer\'s EEPROM. Continue?')) {
+      return
+    }
+
+    try {
+      await sendCommand('M500') // Save to EEPROM
+      alert('Settings saved to printer EEPROM successfully!')
+    } catch (error) {
+      alert('Error saving settings to printer: ' + error.message)
+    }
+  }, [serialStatus, sendCommand])
 
   const getSettingsSummary = () => {
     if (!printerSettings) return null
@@ -57,6 +218,10 @@ const ConfigurationManagementTab = () => {
         zProbeOffset: printerSettings.zProbeOffset,
         linearAdvance: printerSettings.linearAdvance,
         powerLossRecovery: printerSettings.powerLossRecovery
+      },
+      bowdenTube: {
+        length: printerSettings.bowdenTube?.length,
+        type: printerSettings.bowdenTube?.type
       }
     }
 
@@ -120,6 +285,60 @@ const ConfigurationManagementTab = () => {
         </div>
       </div>
 
+      {/* Export/Import and Send/Save Controls */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="flex flex-wrap gap-3 items-center justify-between">
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={exportSettings}
+              disabled={!printerSettings}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Export Settings
+            </button>
+            
+            <label className="flex items-center px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 cursor-pointer transition-colors">
+              <Upload className="w-4 h-4 mr-2" />
+              Import Settings
+              <input
+                type="file"
+                accept=".json"
+                onChange={importSettings}
+                className="hidden"
+              />
+            </label>
+          </div>
+          
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={sendSettingsToPrinter}
+              disabled={serialStatus !== 'connected' || !printerSettings}
+              className="flex items-center px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              <Send className="w-4 h-4 mr-2" />
+              Send to Printer
+            </button>
+            
+            <button
+              onClick={saveSettingsToPrinter}
+              disabled={serialStatus !== 'connected'}
+              className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            >
+              <HardDrive className="w-4 h-4 mr-2" />
+              Save to EEPROM
+            </button>
+          </div>
+        </div>
+        
+        <div className="mt-3 text-sm text-gray-600">
+          <p><strong>Export:</strong> Download current settings as JSON file with timestamp and printer name</p>
+          <p><strong>Import:</strong> Load settings from a previously exported JSON file</p>
+          <p><strong>Send to Printer:</strong> Upload all settings to the connected printer (temporary)</p>
+          <p><strong>Save to EEPROM:</strong> Permanently save current settings to printer memory</p>
+        </div>
+      </div>
+
       {/* Configuration Status */}
       <div className={`rounded-lg border-2 ${settingsStatus.borderColor} ${settingsStatus.bgColor} p-4`}>
         <div className="flex items-center justify-between">
@@ -141,6 +360,109 @@ const ConfigurationManagementTab = () => {
           )}
         </div>
       </div>
+
+      {/* Printer Configuration Summary */}
+      {printerSettings && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-lg border border-blue-200 dark:border-blue-800 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+              <HardDrive className="w-5 h-5 mr-2 text-blue-600" />
+              Printer Configuration Summary
+            </h3>
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              {printerSettings.lastUpdated ? 
+                `Last updated: ${new Date(printerSettings.lastUpdated).toLocaleDateString()}` : 
+                'Auto-fetched on connection'
+              }
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            {/* Motion Settings */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+              <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Motion</div>
+              <div className="text-sm font-mono">
+                X:{settingsSummary.motion.stepsPerUnit?.x || 'N/A'} | 
+                Y:{settingsSummary.motion.stepsPerUnit?.y || 'N/A'}
+              </div>
+              <div className="text-sm font-mono">
+                Z:{settingsSummary.motion.stepsPerUnit?.z || 'N/A'} | 
+                E:{settingsSummary.motion.stepsPerUnit?.e || 'N/A'}
+              </div>
+            </div>
+
+            {/* Acceleration */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+              <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Acceleration</div>
+              <div className="text-sm font-mono">
+                Max: {settingsSummary.acceleration?.max || 'N/A'}
+              </div>
+              <div className="text-sm font-mono">
+                Print: {settingsSummary.acceleration?.print || 'N/A'}
+              </div>
+            </div>
+
+            {/* Temperature */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+              <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Temperature</div>
+              <div className="text-sm font-mono">
+                Hotend PID: {settingsSummary.temperature.pidHotend?.p ? 'Set' : 'N/A'}
+              </div>
+              <div className="text-sm font-mono">
+                Bed PID: {settingsSummary.temperature.pidBed?.p ? 'Set' : 'N/A'}
+              </div>
+            </div>
+
+            {/* Bed Leveling */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+              <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Bed Leveling</div>
+              <div className={`text-sm font-semibold ${
+                settingsSummary.bedLeveling.enabled ? 'text-green-600' : 'text-red-600'
+              }`}>
+                {settingsSummary.bedLeveling.enabled ? 'Enabled' : 'Disabled'}
+              </div>
+              <div className="text-sm font-mono">
+                {settingsSummary.bedLeveling.meshPoints} points
+              </div>
+            </div>
+
+            {/* Advanced Settings */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+              <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Advanced</div>
+              <div className="text-sm font-mono">
+                Linear Adv: {settingsSummary.advanced.linearAdvance || 'N/A'}
+              </div>
+              <div className={`text-sm font-semibold ${
+                settingsSummary.advanced.powerLossRecovery ? 'text-green-600' : 'text-red-600'
+              }`}>
+                PLR: {settingsSummary.advanced.powerLossRecovery ? 'On' : 'Off'}
+              </div>
+            </div>
+
+            {/* Offsets */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+              <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Offsets</div>
+              <div className="text-sm font-mono">
+                Z Probe: {settingsSummary.advanced.zProbeOffset?.z || 'N/A'}mm
+              </div>
+              <div className="text-sm font-mono">
+                Home Z: {settingsSummary.advanced.homeOffset?.z || 'N/A'}mm
+              </div>
+            </div>
+
+            {/* Bowden Tube */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-700">
+              <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Bowden Tube</div>
+              <div className="text-sm font-mono">
+                Length: {settingsSummary.bowdenTube?.length || 'N/A'}mm
+              </div>
+              <div className="text-sm font-mono">
+                Type: {settingsSummary.bowdenTube?.type || 'N/A'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Navigation Tabs */}
       <div className="flex bg-gray-100 rounded-lg p-1">
@@ -176,6 +498,28 @@ const ConfigurationManagementTab = () => {
         >
           <BookOpen className="w-4 h-4 mr-2 inline" />
           Documentation
+        </button>
+        <button
+          onClick={() => setActiveSection('firmware')}
+          className={`flex-1 px-4 py-2 rounded text-sm font-medium ${
+            activeSection === 'firmware' 
+              ? 'bg-white text-gray-900 shadow' 
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <FileText className="w-4 h-4 mr-2 inline" />
+          Firmware Config
+        </button>
+        <button
+          onClick={() => setActiveSection('terminal')}
+          className={`flex-1 px-4 py-2 rounded text-sm font-medium ${
+            activeSection === 'terminal' 
+              ? 'bg-white text-gray-900 shadow' 
+              : 'text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          <Terminal className="w-4 h-4 mr-2 inline" />
+          Terminal & Build
         </button>
       </div>
 
@@ -439,6 +783,27 @@ const ConfigurationManagementTab = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {activeSection === 'firmware' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <div className="flex items-center mb-4">
+              <FileText className="h-5 w-5 text-blue-600 mr-2" />
+              <h3 className="text-lg font-semibold text-gray-900">Firmware Configuration</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-6">
+              Upload and analyze your Marlin firmware configuration files to understand your printer's capabilities
+            </p>
+            <FirmwareConfig />
+          </div>
+        </div>
+      )}
+
+      {activeSection === 'terminal' && (
+        <div className="space-y-6">
+          <RemoteTerminal />
         </div>
       )}
     </div>

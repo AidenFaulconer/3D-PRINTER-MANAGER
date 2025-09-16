@@ -7,6 +7,7 @@ import ExtrusionControl from './controls/ExtrusionControl'
 import FanControl from './controls/FanControl'
 import BabyStepControl from './controls/BabyStepControl'
 import UtilitiesControl from './controls/UtilitiesControl'
+import BedLevelingControl from './controls/BedLevelingControl'
 import BedMeshVisualization from './BedMeshVisualization'
 import PrinterSettingsDisplay from './PrinterSettingsDisplay'
 
@@ -106,55 +107,28 @@ const PrinterControlPanel = React.memo(() => {
         onDisconnect={disconnect}
       />
 
-      {/* Bed Leveling Controls */}
-      <div className="bg-white rounded-lg shadow p-4">
-        <h3 className="text-lg font-semibold mb-4">Bed Leveling Controls</h3>
-        <div className="flex flex-wrap gap-3">
-          <button 
-            onClick={runBedLeveling}
-            disabled={status !== 'connected'}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
-          >
-            Start Bed Leveling (G29)
-          </button>
-          <button 
-            onClick={fetchBedLevel}
-            disabled={status !== 'connected'}
-            className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
-          >
-            Fetch Bed Level Data
-          </button>
-          <button 
-            onClick={() => send('G29 W')}
-            disabled={status !== 'connected'}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed font-medium"
-          >
-            Save Bed Level (G29 W)
-          </button>
-        </div>
-        <p className="text-sm text-gray-600 mt-2">
-          Start bed leveling to create a new mesh, or fetch existing data to view current bed level.
-        </p>
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <MovementControl send={send} requestPosition={requestPosition} lastPosition={position} />
         <TemperatureControl send={send} isConnected={status === 'connected'} />
         <ExtrusionControl send={send} preheat={preheat} />
         <FanControl send={send} />
         <BabyStepControl send={send} isConnected={status === 'connected'} />
-        <UtilitiesControl send={send} />
+        {/* Merge Bed Leveling actions into Utilities */}
+        <UtilitiesControl send={send} extraActions={(
+          <BedLevelingControl send={send} compact={true} />
+        )} />
       </div>
+
 
       {/* Bed Leveling Visualization (condensed: no status/actions) */}
       <div className="bg-white rounded-lg shadow p-4">
-        <h3 className="text-lg font-semibold mb-4">Bed Leveling</h3>
+        {/* <h3 className="text-lg font-semibold mb-4">Bed Leveling Visualization</h3> */}
         <BedMeshVisualization showStatus={false} showActions={false} />
       </div>
 
       {/* Printer Settings */}
       <div className="bg-white rounded-lg shadow p-4">
-        <h3 className="text-lg font-semibold mb-4">Printer Settings</h3>
+        {/* <h3 className="text-lg font-semibold mb-4">Printer Settings</h3> */}
         <PrinterSettingsDisplay />
       </div>
     </div>

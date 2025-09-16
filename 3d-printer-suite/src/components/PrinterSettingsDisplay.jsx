@@ -22,18 +22,18 @@ const PrinterSettingsDisplay = memo(() => {
   }
 
   const renderSettingsSection = (title, settings, keys) => (
-    <div className="bg-white rounded-lg shadow p-4 mb-4">
-      <h3 className="text-lg font-semibold mb-3 flex items-center">
-        <Settings className="w-5 h-5 mr-2" />
+    <div className="bg-gray-50 rounded p-3 mb-2">
+      <h3 className="text-sm font-semibold mb-2 flex items-center text-gray-700">
+        <Settings className="w-4 h-4 mr-1" />
         {title}
       </h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         {keys.map(key => {
           const value = settings?.[key]
           return (
-            <div key={key} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-              <span className="font-medium text-gray-700">{key}:</span>
-              <span className="text-gray-900 font-mono text-sm">
+            <div key={key} className="flex justify-between items-center px-2 py-1 bg-white rounded text-xs">
+              <span className="font-medium text-gray-600">{key}:</span>
+              <span className="text-gray-900 font-mono">
                 {formatValue(value)}
               </span>
             </div>
@@ -45,33 +45,33 @@ const PrinterSettingsDisplay = memo(() => {
 
   if (!printerSettings) {
     return (
-      <div className="bg-white rounded-lg shadow p-6">
+      <div className="bg-gray-50 rounded p-3">
         <div className="text-center">
-          <Settings className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-          <h3 className="text-lg font-semibold text-gray-700 mb-2">No Printer Settings</h3>
-          <p className="text-gray-500 mb-4">Connect to a printer to automatically fetch and view configuration</p>
+          <Settings className="w-8 h-8 mx-auto text-gray-400 mb-2" />
+          <h3 className="text-sm font-semibold text-gray-700 mb-1">No Printer Settings</h3>
+          <p className="text-xs text-gray-500">Connect to a printer to automatically fetch and view configuration</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold">Printer Settings</h2>
+    <div className="space-y-2">
+      <div className="flex justify-between items-center mb-2">
+        <h2 className="text-lg font-bold">Printer Settings</h2>
         <div className="flex gap-2">
           <button
             onClick={() => window.location.href = '#/configuration'}
-            className="px-3 py-2 bg-green-500 text-white rounded hover:bg-green-600 flex items-center"
+            className="px-2 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600 flex items-center"
           >
-            <Edit3 className="w-4 h-4 mr-2" />
+            <Edit3 className="w-3 h-3 mr-1" />
             Edit Settings
           </button>
         </div>
       </div>
 
       {printerSettings.lastUpdated && (
-        <div className="text-sm text-gray-500 mb-4">
+        <div className="text-xs text-gray-500 mb-2">
           Last updated: {new Date(printerSettings.lastUpdated).toLocaleString()}
         </div>
       )}
@@ -88,29 +88,29 @@ const PrinterSettingsDisplay = memo(() => {
       
       {renderSettingsSection('Z Probe Offset (M851)', printerSettings.zProbeOffset, ['x', 'y', 'z'])}
       
-      <div className="bg-white rounded-lg shadow p-4 mb-4">
-        <h3 className="text-lg font-semibold mb-3 flex items-center">
-          <Settings className="w-5 h-5 mr-2" />
+      <div className="bg-gray-50 rounded p-3 mb-2">
+        <h3 className="text-sm font-semibold mb-2 flex items-center text-gray-700">
+          <Settings className="w-4 h-4 mr-1" />
           Bed Leveling (M420)
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-            <span className="font-medium text-gray-700">Enabled:</span>
-            <span className={`px-2 py-1 rounded text-sm ${printerSettings.bedLeveling?.enabled ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <div className="flex justify-between items-center px-2 py-1 bg-white rounded text-xs">
+            <span className="font-medium text-gray-600">Enabled:</span>
+            <span className={`px-1 py-0.5 rounded text-xs ${printerSettings.bedLeveling?.enabled ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
               {printerSettings.bedLeveling?.enabled ? 'Yes' : 'No'}
             </span>
           </div>
-          <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-            <span className="font-medium text-gray-700">Fade Height:</span>
-            <span className="text-gray-900 font-mono text-sm">
+          <div className="flex justify-between items-center px-2 py-1 bg-white rounded text-xs">
+            <span className="font-medium text-gray-600">Fade Height:</span>
+            <span className="text-gray-900 font-mono">
               {printerSettings.bedLeveling?.fadeHeight}mm
             </span>
           </div>
         </div>
         {printerSettings.bedLeveling?.mesh && printerSettings.bedLeveling.mesh.length > 0 && (
-          <div className="mt-3">
-            <h4 className="font-medium text-gray-700 mb-2">Mesh Points ({printerSettings.bedLeveling.mesh.length}):</h4>
-            <div className="max-h-32 overflow-y-auto bg-gray-50 rounded p-2">
+          <div>
+            <h4 className="font-medium text-gray-600 mb-1 text-xs">Mesh Points ({printerSettings.bedLeveling.mesh.length}):</h4>
+            <div className="max-h-20 overflow-y-auto bg-white rounded p-1">
               <pre className="text-xs font-mono">
                 {printerSettings.bedLeveling.mesh.map((row, j) => 
                   row.map((z, i) => 
@@ -127,23 +127,23 @@ const PrinterSettingsDisplay = memo(() => {
       
       {renderSettingsSection('PID Bed (M304)', printerSettings.pid?.bed, ['p', 'i', 'd'])}
 
-      <div className="bg-white rounded-lg shadow p-4 mb-4">
-        <h3 className="text-lg font-semibold mb-3 flex items-center">
-          <Settings className="w-5 h-5 mr-2" />
+      <div className="bg-gray-50 rounded p-3 mb-2">
+        <h3 className="text-sm font-semibold mb-2 flex items-center text-gray-700">
+          <Settings className="w-4 h-4 mr-1" />
           Material Heating (M145)
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {Object.entries(printerSettings.materialHeating || {}).map(([material, temps]) => (
-            <div key={material} className="p-3 bg-gray-50 rounded">
-              <h4 className="font-medium text-gray-700 mb-2 capitalize">{material}</h4>
+            <div key={material} className="p-2 bg-white rounded text-xs">
+              <h4 className="font-medium text-gray-600 mb-1 capitalize">{material}</h4>
               <div className="space-y-1">
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-600">Hotend:</span>
-                  <span className="text-sm font-mono">{temps.hotend}°C</span>
+                  <span className="text-gray-500">Hotend:</span>
+                  <span className="font-mono">{temps.hotend}°C</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-600">Bed:</span>
-                  <span className="text-sm font-mono">{temps.bed}°C</span>
+                  <span className="text-gray-500">Bed:</span>
+                  <span className="font-mono">{temps.bed}°C</span>
                 </div>
               </div>
             </div>
@@ -151,21 +151,21 @@ const PrinterSettingsDisplay = memo(() => {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow p-4 mb-4">
-        <h3 className="text-lg font-semibold mb-3 flex items-center">
-          <Settings className="w-5 h-5 mr-2" />
+      <div className="bg-gray-50 rounded p-3 mb-2">
+        <h3 className="text-sm font-semibold mb-2 flex items-center text-gray-700">
+          <Settings className="w-4 h-4 mr-1" />
           Other Settings
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-            <span className="font-medium text-gray-700">Power Loss Recovery:</span>
-            <span className={`px-2 py-1 rounded text-sm ${printerSettings.powerLossRecovery ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex justify-between items-center px-2 py-1 bg-white rounded text-xs">
+            <span className="font-medium text-gray-600">Power Loss Recovery:</span>
+            <span className={`px-1 py-0.5 rounded text-xs ${printerSettings.powerLossRecovery ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
               {printerSettings.powerLossRecovery ? 'Enabled' : 'Disabled'}
             </span>
           </div>
-          <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-            <span className="font-medium text-gray-700">Linear Advance:</span>
-            <span className="text-gray-900 font-mono text-sm">
+          <div className="flex justify-between items-center px-2 py-1 bg-white rounded text-xs">
+            <span className="font-medium text-gray-600">Linear Advance:</span>
+            <span className="text-gray-900 font-mono">
               {printerSettings.linearAdvance}
             </span>
           </div>

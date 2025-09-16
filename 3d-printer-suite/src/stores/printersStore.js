@@ -30,7 +30,89 @@ const usePrintersStore = create(
           firmware: printerData.firmware || 'Unknown Firmware',
           bedSize: printerData.bedSize || { x: 220, y: 220, z: 250 },
           calibrationSteps: printerData.calibrationSteps || {},
-          firmwareConfiguration: printerData.firmwareConfiguration || {},
+          firmwareConfiguration: printerData.firmwareConfiguration || {
+            maxHotendTemp: 275,
+            maxBedTemp: 120,
+            stepsPerMm: {
+              x: 80,
+              y: 80,
+              z: 400,
+              e: 93
+            },
+            maxFeedrate: {
+              x: 500,
+              y: 500,
+              z: 5,
+              e: 25
+            },
+            maxAcceleration: {
+              x: 1000,
+              y: 1000,
+              z: 100,
+              e: 5000
+            },
+            jerk: {
+              x: 0,
+              y: 0,
+              z: 0,
+              e: 0
+            },
+            pid: {
+              hotend: { p: 21.73, i: 1.54, d: 73.76 },
+              bed: { p: 301.25, i: 24.20, d: 73.76 }
+            },
+            endstops: {
+              x: 'X_MIN_PIN',
+              y: 'Y_MIN_PIN', 
+              z: 'Z_MIN_PIN'
+            },
+            stepperDrivers: {
+              x: 'TMC2208',
+              y: 'TMC2208',
+              z: 'TMC2208',
+              e: 'TMC2208'
+            },
+            microsteps: {
+              x: 16,
+              y: 16,
+              z: 16,
+              e: 16
+            },
+            current: {
+              x: 580,
+              y: 580,
+              z: 580,
+              e: 650
+            },
+            homing: {
+              feedrate: 4000,
+              backoff: 2,
+              bump: 5
+            },
+            probe: {
+              enabled: false,
+              offset: { x: 0, y: 0, z: 0 },
+              speed: 133
+            },
+            bedLeveling: {
+              enabled: false,
+              type: 'BILINEAR',
+              gridSize: { x: 3, y: 3 }
+            },
+            linearAdvance: 0,
+            retraction: {
+              length: 6.5,
+              speed: 25,
+              primeSpeed: 25
+            },
+            fan: {
+              maxSpeed: 255,
+              minSpeed: 0
+            },
+            powerLossRecovery: true,
+            thermalProtection: true,
+            watchdog: true
+          },
           printerSettings: printerData.printerSettings || {
             units: {
               linear: 'mm',
@@ -39,6 +121,10 @@ const usePrintersStore = create(
             filament: {
               diameter: 1.75,
               type: 'PLA'
+            },
+            bowdenTube: {
+              length: 700, // Default Capricorn tube length in mm
+              type: 'Capricorn' // Tube type for reference
             },
             stepsPerUnit: {
               x: 80,

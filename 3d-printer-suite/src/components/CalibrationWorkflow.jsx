@@ -15,7 +15,8 @@ import {
   Ruler,
   Zap,
   FileText,
-  Box
+  Box,
+  Send
 } from 'lucide-react'
 import useSerialStore from '../stores/serialStore'
 import usePrintersStore from '../stores/printersStore'
@@ -52,20 +53,24 @@ import {
   updateGlobalParameters
 } from '../utils/ParameterTracker'
 
-// Import GLOBAL_PARAMETERS for UI indicators
+// Import GLOBAL_PARAMETERS for UI indicators and default values
 const GLOBAL_PARAMETERS = {
-  hotendTemp: true,
-  bedTemp: true,
-  nozzleDiameter: true,
-  layerHeight: true,
-  printSpeed: true,
-  retractionDistance: true,
-  retractionSpeed: true,
-  primeSpeed: true,
-  flowRate: true,
-  wallThickness: true,
+  hotendTemp: 200,
+  bedTemp: 60,
+  nozzleDiameter: 0.4,
+  layerHeight: 0.2,
+  printSpeed: 50,
+  retractionDistance: 5,
+  retractionSpeed: 45,
+  primeSpeed: 45,
+  flowRate: 100,
+  wallThickness: 0.4,
   enableABL: true,
-  firstLayerSpeed: true
+  firstLayerSpeed: 20,
+  probeZOffset: 0.0,
+  bedLevelGridX: 5,
+  bedLevelGridY: 5,
+  currentEsteps: 93
 }
 import TemperatureChart from './controls/TemperatureChart'
 import BedMeshVisualization from './BedMeshVisualization'
@@ -102,7 +107,7 @@ const CalibrationWorkflow = () => {
   })
   // Steps that do not produce printable toolpaths (prefer text view)
   const isNonPrintingStep = (stepId) => {
-    return stepId === 'pid-autotune' || stepId === 'bed-leveling'
+    return stepId === 'pid-autotune' || stepId === 'bed-leveling' || stepId === 'extruder-esteps'
   }
 
   const [gcodeViewMode, setGcodeViewMode] = useState(() => {
@@ -127,6 +132,53 @@ const CalibrationWorkflow = () => {
   })
   const [isConnected, setIsConnected] = useState(false)
   const [globalParams, setGlobalParams] = useState({})
+  const [bedMeshUpdateTrigger, setBedMeshUpdateTrigger] = useState(0)
+  
+  // Check if bed level quality is acceptable for printing
+  const checkBedLevelQuality = (meshData) => {
+    if (!meshData?.data || !Array.isArray(meshData.data)) return false
+    
+    try {
+      // Flatten mesh data to get all Z values
+      let values
+      if (Array.isArray(meshData.data[0])) {
+        // 2D array format
+        values = meshData.data.flat().filter(v => typeof v === 'number')
+      } else {
+        // Object format with z property
+        values = meshData.data.map(p => p.z).filter(v => typeof v === 'number')
+      }
+      
+      if (values.length === 0) return false
+      
+      const minZ = Math.min(...values)
+      const maxZ = Math.max(...values)
+      const range = maxZ - minZ
+      const avgZ = values.reduce((sum, val) => sum + val, 0) / values.length
+      
+      // Calculate average deviation from mean
+      const avgDeviation = values.reduce((sum, val) => sum + Math.abs(val - avgZ), 0) / values.length
+      
+      // Acceptable tolerances:
+      // - Total range ≤ 0.3mm (good for most printers)
+      // - Average deviation ≤ 0.15mm (excellent for ABL)
+      const isRangeAcceptable = range <= 0.3
+      const isDeviationAcceptable = avgDeviation <= 0.15
+      
+      console.log('Bed level quality check:', {
+        range: range.toFixed(3),
+        avgDeviation: avgDeviation.toFixed(3),
+        isRangeAcceptable,
+        isDeviationAcceptable,
+        overallAcceptable: isRangeAcceptable && isDeviationAcceptable
+      })
+      
+      return isRangeAcceptable && isDeviationAcceptable
+    } catch (error) {
+      console.warn('Error checking bed level quality:', error)
+      return false
+    }
+  }
   
   // Icon map for global parameter keys (reuse existing imported icons)
   const globalParamIcons = useMemo(() => ({
@@ -219,14 +271,167 @@ const CalibrationWorkflow = () => {
     }
   }, [activePrinter?.id])
 
+  // Refresh global parameters when serial store updates them
+  useEffect(() => {
+    if (activePrinter?.id && isConnected) {
+      const refreshGlobalParams = () => {
+        const updatedGlobalParams = loadGlobalParameters(activePrinter.id)
+        setGlobalParams(updatedGlobalParams)
+        console.log('Refreshed global parameters from store:', updatedGlobalParams)
+      }
+      
+      // Refresh immediately
+      refreshGlobalParams()
+      
+      // Set up interval to refresh periodically when connected
+      const interval = setInterval(refreshGlobalParams, 2000)
+      
+      return () => clearInterval(interval)
+    }
+  }, [activePrinter?.id, isConnected])
+
+  // Update parameters when global parameters change (for global parameter inputs)
+  useEffect(() => {
+    if (currentStep?.inputs && Object.keys(globalParams).length > 0) {
+      const updatedParams = { ...parameters }
+      let hasChanges = false
+      
+      currentStep.inputs.forEach(input => {
+        // Only update if this is a global parameter and we don't have a value yet
+        if (GLOBAL_PARAMETERS.hasOwnProperty(input.key) && 
+            globalParams[input.key] !== undefined && 
+            (parameters[input.key] === undefined || parameters[input.key] === '' || parameters[input.key] === input.defaultValue)) {
+          updatedParams[input.key] = globalParams[input.key]
+          hasChanges = true
+        }
+      })
+      
+      if (hasChanges) {
+        console.log('Updating parameters with global values:', updatedParams)
+        setParameters(updatedParams)
+      }
+    }
+  }, [globalParams, currentStep?.inputs])
+
+  // Calculate new e-steps when remaining filament is entered
+  useEffect(() => {
+    console.log('E-steps calculation useEffect triggered:', {
+      stepId: currentStep?.id,
+      remainingFilament: parameters.remainingFilament,
+      currentEsteps: parameters.currentEsteps,
+      extrudeDistance: parameters.extrudeDistance,
+      allParameters: parameters
+    })
+    
+    if (currentStep?.id === 'extruder-esteps' && parameters.remainingFilament && parameters.currentEsteps && parameters.extrudeDistance) {
+      const remainingFilament = parseFloat(parameters.remainingFilament)
+      const currentEsteps = parseFloat(parameters.currentEsteps)
+      const extrudeDistance = parseFloat(parameters.extrudeDistance)
+      
+      console.log('Parsed values:', {
+        remainingFilament,
+        currentEsteps,
+        extrudeDistance
+      })
+      
+      if (remainingFilament > 0 && currentEsteps > 0 && extrudeDistance > 0) {
+        // Calculate actual extruded distance
+        const actualExtruded = extrudeDistance - remainingFilament
+        
+        console.log('Actual extruded calculation:', {
+          extrudeDistance,
+          remainingFilament,
+          actualExtruded
+        })
+        
+        if (actualExtruded > 0) {
+          // New E-steps = (Current E-steps × Requested distance) ÷ Actual distance
+          const newEsteps = (currentEsteps * extrudeDistance) / actualExtruded
+          
+          console.log('E-steps calculation:', {
+            currentEsteps,
+            extrudeDistance,
+            remainingFilament,
+            actualExtruded,
+            newEsteps
+          })
+          
+          setParameters(prev => {
+            const updated = {
+              ...prev,
+              calculatedEsteps: Math.round(newEsteps * 10) / 10 // Round to 1 decimal place
+            }
+            console.log('Updating parameters with calculated e-steps:', updated)
+            return updated
+          })
+        } else {
+          console.log('Actual extruded is not positive:', actualExtruded)
+        }
+      } else {
+        console.log('One or more values are not positive:', {
+          remainingFilament,
+          currentEsteps,
+          extrudeDistance
+        })
+      }
+    } else {
+      console.log('Conditions not met for e-steps calculation')
+    }
+  }, [currentStep?.id, parameters.remainingFilament, parameters.currentEsteps, parameters.extrudeDistance])
+
   // Load bed mesh when navigating to bed leveling step
   useEffect(() => {
     if (currentStep?.id === 'bed-leveling' && activePrinter?.id) {
       const loadBedMeshFromPrinter = useSerialStore.getState().loadBedMeshFromPrinter
       loadBedMeshFromPrinter(activePrinter.id)
       console.log('Loading bed mesh for bed leveling step')
+      
+      // Force re-evaluation of step status when navigating to bed leveling
+      setBedMeshUpdateTrigger(prev => prev + 1)
     }
   }, [currentStep?.id, activePrinter?.id])
+
+  // Auto-proceed for bed leveling when marked as completed (ok)
+  useEffect(() => {
+    if (currentStep?.id === 'bed-leveling' && stepState === 'config') {
+      const status = getStepStatus('bed-leveling')
+      if (status === 'completed') {
+        console.log('Bed leveling is marked as completed (ok), allowing user to proceed')
+        setStepState('completed')
+      }
+    }
+  }, [currentStep?.id, stepState, bedMeshUpdateTrigger])
+
+  // Refresh global parameters when navigating to e-steps calibration
+  useEffect(() => {
+    if (currentStep?.id === 'extruder-esteps' && activePrinter?.id && isConnected) {
+      // Immediately refresh global parameters for e-steps
+      const refreshGlobalParams = () => {
+        const updatedGlobalParams = loadGlobalParameters(activePrinter.id)
+        setGlobalParams(updatedGlobalParams)
+        console.log('Refreshed global parameters for e-steps navigation:', updatedGlobalParams)
+      }
+      
+      refreshGlobalParams()
+    }
+  }, [currentStep?.id, activePrinter?.id, isConnected])
+
+  // Force re-evaluation of step status when bed mesh data changes
+  useEffect(() => {
+    if (isConnected) {
+      const unsubscribe = useSerialStore.subscribe(
+        (state) => state.bedMesh,
+        (bedMesh) => {
+          if (bedMesh?.data && Array.isArray(bedMesh.data) && bedMesh.data.length > 0) {
+            console.log('Bed mesh data updated, triggering step status re-evaluation')
+            setBedMeshUpdateTrigger(prev => prev + 1)
+          }
+        }
+      )
+      
+      return unsubscribe
+    }
+  }, [isConnected])
 
   // Initialize parameters for current step (only when step changes)
   useEffect(() => {
@@ -252,11 +457,23 @@ const CalibrationWorkflow = () => {
           // Try to load from printer settings
           const loadedParams = await loadParametersFromSettings(currentStep.id)
           
+          // For e-steps calibration, refresh global parameters after M92 command
+          let refreshedGlobalParams = globalParams
+          if (currentStep.id === 'extruder-esteps') {
+            // Wait a bit more for the M92 response to be processed
+            await new Promise(resolve => setTimeout(resolve, 1000))
+            refreshedGlobalParams = loadGlobalParameters(activePrinter.id)
+            console.log('Refreshed global parameters for e-steps:', refreshedGlobalParams)
+            
+            // Also update the global params state immediately
+            setGlobalParams(refreshedGlobalParams)
+          }
+          
           // Create merged parameters: sessionStorage > global > printer settings > defaults
           const initialParams = {}
           currentStep.inputs?.forEach(input => {
             initialParams[input.key] = sessionParams[input.key] || 
-                                     globalParams[input.key] || 
+                                     refreshedGlobalParams[input.key] || 
                                      loadedParams[input.key] || 
                                      input.defaultValue || ''
           })
@@ -378,6 +595,84 @@ const CalibrationWorkflow = () => {
       
       return newParams
     })
+  }
+
+  const sendToPrinter = async () => {
+    if (!isConnected) {
+      alert('Please connect to your printer first')
+      return
+    }
+
+    if (!generatedGcode) {
+      alert('No commands to send. Please generate commands first.')
+      return
+    }
+
+    try {
+      const sendCommand = useSerialStore.getState().sendCommand
+      const commands = generatedGcode.split('\n').filter(line => line.trim())
+      
+      for (const command of commands) {
+        if (command.trim()) {
+          await sendCommand(command.trim())
+          // Small delay between commands
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+      }
+      
+      alert('Commands sent successfully!')
+    } catch (error) {
+      console.error('Error sending commands:', error)
+      alert('Error sending commands: ' + error.message)
+    }
+  }
+
+  const sendCalculatedEsteps = async () => {
+    if (!isConnected) {
+      alert('Please connect to your printer first')
+      return
+    }
+
+    if (!parameters.calculatedEsteps || parameters.calculatedEsteps <= 0) {
+      alert('Please calculate the new e-steps first by entering the remaining filament measurement.')
+      return
+    }
+
+    try {
+      const newEsteps = parameters.calculatedEsteps
+      console.log('Sending calculated e-steps to printer:', newEsteps)
+      
+      const sendCommand = useSerialStore.getState().sendCommand
+      
+      // Send M92 command to set new e-steps
+      await sendCommand(`M92 E${newEsteps}`)
+      await new Promise(resolve => setTimeout(resolve, 1000)) // Wait for command to process
+      
+      // Save to EEPROM
+      await sendCommand('M500')
+      await new Promise(resolve => setTimeout(resolve, 1000)) // Wait for save to complete
+      
+      // Update global parameters with new e-steps
+      if (activePrinter?.id) {
+        const updatedGlobalParams = { ...globalParams, currentEsteps: newEsteps }
+        setGlobalParams(updatedGlobalParams)
+        
+        // Save to localStorage
+        const { saveGlobalParameters } = await import('../utils/ParameterTracker.js')
+        saveGlobalParameters(activePrinter.id, updatedGlobalParams)
+        
+        console.log('Updated global parameters with new e-steps:', newEsteps)
+      }
+      
+      // Show success message
+      useSerialStore.getState().appendSerialLog(`E-steps updated to ${newEsteps} and saved to EEPROM`, 'sys')
+      alert(`E-steps successfully updated to ${newEsteps} and saved to printer!`)
+      
+    } catch (error) {
+      console.error('Error sending calculated e-steps to printer:', error)
+      useSerialStore.getState().appendSerialLog(`Error updating e-steps: ${error.message}`, 'err')
+      alert('Error updating e-steps: ' + error.message)
+    }
   }
 
   const startStep = async () => {
@@ -505,6 +800,22 @@ const CalibrationWorkflow = () => {
     }
   }
 
+  const skipStep = () => {
+    // Mark step as skipped
+    setStepResults(prev => ({
+      ...prev,
+      [currentStep.id]: {
+        ...prev[currentStep.id],
+        skipped: true,
+        timestamp: Date.now(),
+        reason: 'User skipped - previously completed'
+      }
+    }))
+    
+    // Move to next step
+    nextStep()
+  }
+
   const previousStep = () => {
     if (!isFirstStep) {
       setCurrentStepIndex(prev => prev - 1)
@@ -612,39 +923,70 @@ const CalibrationWorkflow = () => {
     return icons[stepId] || Settings
   }
 
-  const getStepStatus = (stepId) => {
-    // Auto inference using serial store data
-    try {
-      const serialState = useSerialStore.getState()
-      const printer = serialState.activePrinter
-      const settings = printer?.printerSettings || {}
-      const bedMesh = serialState.bedMesh
+  const getStepStatus = useMemo(() => {
+    return (stepId) => {
+      // Auto inference using serial store data
+      try {
+        const serialState = useSerialStore.getState()
+        const printer = serialState.activePrinter
+        const settings = printer?.printerSettings || {}
+        const bedMesh = serialState.bedMesh
+        
+        // Force re-evaluation when bed mesh data changes
+        if (bedMeshUpdateTrigger > 0) {
+          console.log('Re-evaluating step status due to bed mesh update, trigger:', bedMeshUpdateTrigger)
+        }
 
-      // Heuristics per step
-      if (stepId === 'pid-autotune') {
-        const hot = settings?.pid?.hotend
-        const bed = settings?.pid?.bed
-        const looksTuned = hot && bed && hot.p > 0 && hot.i > 0 && hot.d >= 0 && bed.p > 0 && bed.i > 0 && bed.d >= 0
-        if (looksTuned) return 'review' // previously tuned; not guaranteed perfect
+        // Heuristics per step
+        if (stepId === 'pid-autotune') {
+          const hot = settings?.pid?.hotend
+          const bed = settings?.pid?.bed
+          const looksTuned = hot && bed && hot.p > 0 && hot.i > 0 && hot.d >= 0 && bed.p > 0 && bed.i > 0 && bed.d >= 0
+          if (looksTuned) return 'review' // previously tuned; not guaranteed perfect
+        }
+        if (stepId === 'bed-leveling') {
+          const hasMesh = Array.isArray(bedMesh?.data) && bedMesh.data.length > 0
+          const meshFromSettings = Array.isArray(settings?.bedLeveling?.mesh) && settings.bedLeveling.mesh.length > 0
+          
+          console.log('Bed leveling status check:', {
+            hasMesh,
+            meshFromSettings,
+            bedMeshData: bedMesh?.data,
+            settingsMesh: settings?.bedLeveling?.mesh
+          })
+          
+          if (hasMesh || meshFromSettings) {
+            // Check if bed is within acceptable tolerances
+            const meshData = hasMesh ? bedMesh : { data: settings.bedLeveling.mesh }
+            const isBedLevelAcceptable = checkBedLevelQuality(meshData)
+            
+            console.log('Bed level quality check result:', isBedLevelAcceptable)
+            
+            if (isBedLevelAcceptable) {
+              console.log('Bed leveling marked as completed due to acceptable quality')
+              return 'completed' // Bed is level enough for good prints
+            } else {
+              console.log('Bed leveling marked as review due to poor quality')
+              return 'review' // Has mesh data but needs adjustment
+            }
+          } else {
+            console.log('No bed mesh data available for bed leveling check')
+          }
+        }
+        if (stepId === 'extruder-esteps') {
+          const esteps = settings?.currentEsteps || settings?.esteps || serialState?.printerState?.esteps
+          if (esteps && typeof esteps === 'number' && esteps > 0) return 'review'
+        }
+      } catch (e) {
+        // fall through to manual status
       }
-      if (stepId === 'bed-leveling') {
-        const hasMesh = Array.isArray(bedMesh?.data) && bedMesh.data.length > 0
-        const meshFromSettings = Array.isArray(settings?.bedLeveling?.mesh) && settings.bedLeveling.mesh.length > 0
-        if (hasMesh || meshFromSettings) return 'review'
-      }
-      if (stepId === 'extruder-esteps') {
-        const esteps = settings?.currentEsteps || settings?.esteps || serialState?.printerState?.esteps
-        if (esteps && typeof esteps === 'number' && esteps > 0) return 'review'
-      }
-    } catch (e) {
-      // fall through to manual status
-    }
 
     if (workflowResults[stepId]?.completed) return 'completed'
     if (stepResults[stepId]) return 'review'
     if (currentStepIndex > workflowSteps.findIndex(s => s.id === stepId)) return 'pending'
     return 'current'
   }
+  }, [bedMeshUpdateTrigger, workflowResults, stepResults, currentStepIndex])
 
   const getValidationChecks = (stepId) => {
     const checks = {
@@ -736,9 +1078,9 @@ const CalibrationWorkflow = () => {
 
       {/* Header */}
       <div className="bg-white rounded-lg shadow p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold">3D Printer Calibration Workflow</h1>
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+          <h1 className="text-xl sm:text-2xl font-bold">3D Printer Calibration Workflow</h1>
+          <div className="flex flex-wrap items-center gap-2">
             <div className={`px-3 py-1 rounded-full text-sm font-medium ${
               workflowState === 'idle' ? 'bg-gray-100 text-gray-800' :
               workflowState === 'running' ? 'bg-blue-100 text-blue-800' :
@@ -758,7 +1100,7 @@ const CalibrationWorkflow = () => {
       )}
           <button
               onClick={resetWorkflow}
-              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm"
           >
               Reset Workflow
           </button>
@@ -766,7 +1108,8 @@ const CalibrationWorkflow = () => {
         </div>
 
         {/* Progress Steps */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="mb-6">
+          <div className="flex flex-wrap items-center gap-4 lg:gap-6">
           {workflowSteps.map((step, index) => {
             const Icon = getStepIcon(step.id)
             const status = getStepStatus(step.id)
@@ -777,28 +1120,33 @@ const CalibrationWorkflow = () => {
                 <div className={`flex items-center justify-center w-10 h-10 rounded-full border-2 ${
                   status === 'completed' ? 'bg-green-500 border-green-500 text-white' :
                   status === 'review' ? 'bg-yellow-500 border-yellow-500 text-white' :
+                    stepResults[step.id]?.skipped ? 'bg-orange-500 border-orange-500 text-white' :
                   isCurrent ? 'bg-blue-500 border-blue-500 text-white' :
                   'bg-gray-100 border-gray-300 text-gray-500'
                 }`}>
-                  {status === 'completed' ? <CheckCircle className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
+                    {status === 'completed' ? <CheckCircle className="w-5 h-5" /> : 
+                     stepResults[step.id]?.skipped ? <ArrowRight className="w-5 h-5" /> :
+                     <Icon className="w-5 h-5" />}
                 </div>
-                <div className="ml-3">
+                  <div className="ml-3 min-w-0">
                   <div className="text-sm font-medium">
                     <span className="text-xs text-gray-400 mr-2">{getStepNumberDisplay(step.id)}</span>
-                    {step.name}
+                      <span className="truncate">{step.name}</span>
                   </div>
                   <div className="text-xs text-gray-500">
                     {status === 'completed' ? 'Completed' :
                      status === 'review' ? 'Review Results' :
+                       stepResults[step.id]?.skipped ? 'Skipped' :
                      isCurrent ? 'Current' : 'Pending'}
                   </div>
                   </div>
                 {index < workflowSteps.length - 1 && (
-                  <ArrowRight className="w-4 h-4 text-gray-400 mx-4" />
+                    <ArrowRight className="w-4 h-4 text-gray-400 mx-2 lg:mx-4 flex-shrink-0" />
                     )}
                   </div>
             )
           })}
+          </div>
         </div>
       </div>
 
@@ -887,10 +1235,10 @@ const CalibrationWorkflow = () => {
                 
                 <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
                   <div className="text-xs text-yellow-800 space-y-1">
-                    <div><strong>Typical direction:</strong></div>
-                    <div>↻ <strong>Clockwise</strong> = Lower the bed (bed moves away from nozzle)</div>
-                    <div>↺ <strong>Counter-clockwise</strong> = Raise the bed (bed moves toward nozzle)</div>
-                    <div className="mt-1 opacity-90">Note: Some printers invert this behavior depending on spring orientation and screw threading. Make a small test adjustment to confirm.</div>
+                    <div><strong>Typical direction (most printers):</strong></div>
+                    <div>↻ <strong>Clockwise</strong> = Raise the bed (moves closer to nozzle)</div>
+                    <div>↺ <strong>Counter-clockwise</strong> = Lower the bed (moves away from nozzle)</div>
+                    <div className="mt-1 opacity-90">Note: Some printers may invert this behavior. Test with a small adjustment to confirm your printer's behavior.</div>
                   </div>
                 </div>
               </div>
@@ -938,18 +1286,23 @@ const CalibrationWorkflow = () => {
                         max={input.max}
                         step={input.step}
                         required={input.required}
+                        readOnly={input.readOnly}
+                        helpText={input.helpText}
                         disabled={stepState !== 'config'}
                         validate={validateInput}
                         syncWithStore={isGlobalParam}
                         getStoreValue={() => globalParams[input.key]}
-                        onChangeStore={(value) => {
+                        controlledValue={isGlobalParam ? globalParams[input.key] : parameters[input.key]}
+                        controlledOnChange={isGlobalParam ? (value) => {
                           console.log('Store update for global parameter:', input.key, 'value:', value)
+                          handleParameterChange(input.key, value)
+                        } : (value) => {
+                          console.log('Regular parameter change:', input.key, 'value:', value)
                           handleParameterChange(input.key, value)
                         }}
                         initialValue={parameters[input.key] || input.defaultValue || ''}
-                        className={isGlobalParam ? 'border-blue-300 bg-blue-50' : ''}
+                        className={isGlobalParam ? 'border-blue-300 bg-blue-50' : input.readOnly ? 'border-green-300 bg-green-50' : ''}
                         errorClassName="text-red-600"
-                        helpText={getParameterHelpText(input.key, currentStep.id)}
                       />
                     )
                   })}
@@ -970,13 +1323,13 @@ const CalibrationWorkflow = () => {
                     {Object.entries(globalParams).map(([key, value]) => {
                       const Icon = globalParamIcons[key] || Settings
                       return (
-                        <div key={key} className="flex justify-between items-center min-w-0 px-1 py-0.5 bg-white dark:bg-gray-800 rounded">
+                      <div key={key} className="flex justify-between items-center min-w-0 px-1 py-0.5 bg-white dark:bg-gray-800 rounded">
                           <span className="flex items-center gap-1 text-blue-700 dark:text-blue-300 font-medium truncate mr-1 text-xs">
                             <Icon className="w-3 h-3" />
                             {key}:
                           </span>
-                          <span className="text-blue-900 dark:text-blue-100 font-mono text-xs">{value}</span>
-                        </div>
+                        <span className="text-blue-900 dark:text-blue-100 font-mono text-xs">{value}</span>
+                      </div>
                       )
                     })}
                   </div>
@@ -986,12 +1339,132 @@ const CalibrationWorkflow = () => {
                 </div>
               )}
 
-              {/* Bed Leveling Visualization or Generated G-code Preview */}
-              {currentStep.id === 'bed-leveling' ? (
+              {/* Bed Leveling Visualization */}
+              {currentStep.id === 'bed-leveling' && (
                 <div className="space-y-4">
                   <BedMeshVisualization showStatus={true} showActions={true} />
+                  
+                  {/* Bed Level Quality Indicator */}
+                  {(() => {
+                    const bedMesh = useSerialStore.getState().bedMesh
+                    const printerSettings = usePrintersStore.getState().printers.find(p => p.id === activePrinter?.id)?.printerSettings
+                    const hasMesh = Array.isArray(bedMesh?.data) && bedMesh.data.length > 0
+                    const meshFromSettings = Array.isArray(printerSettings?.bedLeveling?.mesh) && printerSettings.bedLeveling.mesh.length > 0
+                    
+                    if (hasMesh || meshFromSettings) {
+                      const meshData = hasMesh ? bedMesh : { data: printerSettings.bedLeveling.mesh }
+                      const isAcceptable = checkBedLevelQuality(meshData)
+                      
+                      return (
+                        <div className={`p-3 rounded-lg border ${isAcceptable ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'}`}>
+                          <div className="flex items-center gap-2">
+                            <div className={`w-3 h-3 rounded-full ${isAcceptable ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+                            <span className={`font-medium ${isAcceptable ? 'text-green-800' : 'text-yellow-800'}`}>
+                              {isAcceptable ? '✅ Bed Level Quality: EXCELLENT' : '⚠️ Bed Level Quality: NEEDS ADJUSTMENT'}
+                            </span>
+                          </div>
+                          <p className={`text-sm mt-1 ${isAcceptable ? 'text-green-700' : 'text-yellow-700'}`}>
+                            {isAcceptable 
+                              ? 'Your bed is level enough for high-quality prints with ABL. No manual adjustment needed!'
+                              : 'Consider adjusting bed leveling knobs to improve print quality. Use the corner adjustment guide above.'
+                            }
+                          </p>
+                        </div>
+                      )
+                    }
+                    return null
+                  })()}
                 </div>
-              ) : generatedGcode && (
+              )}
+
+              {/* Non-printing steps: Show commands and send button */}
+              {isNonPrintingStep(currentStep.id) && generatedGcode && (
+                <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-medium text-gray-700">Generated Commands:</h3>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={downloadGcode}
+                            className="px-3 py-1 rounded text-sm flex items-center space-x-1 bg-green-600 text-white hover:bg-green-700"
+                          >
+                            <FileText className="w-4 h-4" />
+                            <span>Download</span>
+                          </button>
+                          <button
+                            onClick={sendToPrinter}
+                            disabled={serialStatus !== 'connected'}
+                            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-2"
+                          >
+                            <Send className="w-4 h-4" />
+                            <span>Send to Printer</span>
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="bg-gray-900 text-green-400 p-4 rounded font-mono text-sm max-h-40 overflow-y-auto">
+                        <pre>{generatedGcode}</pre>
+                      </div>
+                      
+                      {/* Step-specific acceptance criteria */}
+                      {currentStep.id === 'bed-leveling' && (
+                        <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                          <h4 className="font-medium text-blue-800 mb-2">Acceptance Criteria:</h4>
+                          <ul className="text-sm text-blue-700 space-y-1">
+                            <li>• Bed mesh range ≤ 0.3mm</li>
+                            <li>• Average deviation ≤ 0.15mm</li>
+                            <li>• ABL can compensate for these variations</li>
+                          </ul>
+                        </div>
+                      )}
+                      
+                      {currentStep.id === 'pid-autotune' && (
+                        <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                          <h4 className="font-medium text-blue-800 mb-2">Acceptance Criteria:</h4>
+                          <ul className="text-sm text-blue-700 space-y-1">
+                            <li>• Temperature remains stable during test</li>
+                            <li>• No temperature oscillations</li>
+                            <li>• PID values are automatically calculated</li>
+                          </ul>
+                        </div>
+                      )}
+                      
+                      {currentStep.id === 'extruder-esteps' && (
+                        <div className="space-y-3">
+                          <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                            <h4 className="font-medium text-blue-800 mb-2">Acceptance Criteria:</h4>
+                            <ul className="text-sm text-blue-700 space-y-1">
+                              <li>• Measure actual extrusion distance</li>
+                              <li>• Calculate new E-steps: (Current × Requested) ÷ Actual</li>
+                              <li>• Test with 100mm extrusion for accuracy</li>
+                            </ul>
+                          </div>
+                          
+                          {parameters.calculatedEsteps && parameters.calculatedEsteps > 0 && (
+                            <div className="bg-green-50 border border-green-200 rounded p-3">
+                              <h4 className="font-medium text-green-800 mb-2">Apply Calculated E-Steps:</h4>
+                              <div className="flex items-center justify-between">
+                                <div className="text-sm text-green-700">
+                                  <p>New E-steps: <span className="font-mono font-bold">{parameters.calculatedEsteps}</span></p>
+                                  <p className="text-xs opacity-75">This will update your printer's E-steps and save to EEPROM</p>
+                                </div>
+                                <button
+                                  onClick={sendCalculatedEsteps}
+                                  disabled={!isConnected}
+                                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-2"
+                                >
+                                  <Send className="w-4 h-4" />
+                                  <span>Send to Printer</span>
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                </div>
+              )}
+
+              {/* Printing steps: Show full G-code visualization */}
+              {!isNonPrintingStep(currentStep.id) && generatedGcode && currentStep.id !== 'extruder-esteps' && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="font-medium text-gray-700">Generated G-code:</h3>
@@ -1069,6 +1542,7 @@ const CalibrationWorkflow = () => {
                     Abort (Emergency Stop)
                   </button>
                 )}
+                <div className="flex gap-3">
                 <button
                   onClick={startStep}
                   disabled={!isConnected || !generatedGcode}
@@ -1077,6 +1551,18 @@ const CalibrationWorkflow = () => {
                   <Play className="w-4 h-4" />
                   Start Calibration
                 </button>
+                  
+                  {/* Skip button for PID tuning and e-steps */}
+                  {(currentStep.id === 'pid-autotune' || currentStep.id === 'extruder-esteps') && (
+                    <button
+                      onClick={skipStep}
+                      className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700 flex items-center gap-2"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                      Skip (Previously Done)
+                    </button>
+                  )}
+                </div>
                   </div>
                 </div>
               )}

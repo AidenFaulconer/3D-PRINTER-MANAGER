@@ -150,11 +150,11 @@ const Scene = ({ geometryData, visibleLayers, showTravelMoves, buildPlateSize })
         <gridHelper 
           args={[buildPlateSize.x, Math.max(10, Math.floor(buildPlateSize.x / 10)), '#cccccc', '#cccccc']} 
           position={[0, 0, 0]} 
-          rotation={[-Math.PI / 2, 0, 0]}
+          rotation={[Math.PI / 2, 0, 0]}
         />
         
         {/* Build plate outline for test cube */}
-        <mesh position={[0, 0, 0.01]} rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh position={[0, 0, 0.01]}>
           <planeGeometry args={[buildPlateSize.x, buildPlateSize.y]} />
           <meshBasicMaterial color="#f0f0f0" transparent opacity={0.1} />
         </mesh>
@@ -253,11 +253,11 @@ const Scene = ({ geometryData, visibleLayers, showTravelMoves, buildPlateSize })
             <gridHelper 
               args={[gridSizeX, Math.max(10, Math.floor(gridSizeX / 10)), '#cccccc', '#cccccc']} 
               position={[centerX, centerY, 0]} 
-              rotation={[-Math.PI / 2, 0, 0]}
+              rotation={[Math.PI / 2, 0, 0]}
             />
             
             {/* Build plate outline positioned to match G-code center */}
-            <mesh position={[centerX, centerY, 0.01]} rotation={[-Math.PI / 2, 0, 0]}>
+            <mesh position={[centerX, centerY, 0.01]}>
               <planeGeometry args={[buildPlateSize.x, buildPlateSize.y]} />
               <meshBasicMaterial color="#f0f0f0" transparent opacity={0.1} />
             </mesh>
@@ -443,15 +443,15 @@ const SimpleGcodeViewer3D = ({ content, width = 800, height = 700, buildPlateSiz
           // Use the larger of G-code size or build plate size for proper scaling
           const buildPlateMax = Math.max(buildPlateSize.x, buildPlateSize.y)
           const effectiveSize = Math.max(maxSize, buildPlateMax)
-          const distance = Math.max(effectiveSize * 1.2, 30)
+          const distance = Math.max(effectiveSize * 1.4, 40)
           
           // Position camera at corner for birds-eye view
           // Offset to corner: move away from center in both X and Y
-          const cornerOffset = effectiveSize * 0.6
+          const cornerOffset = effectiveSize * 0.45
           const newCameraPosition = [
-            centerX + cornerOffset,  // Move to corner
-            centerY + cornerOffset,  // Move to corner  
-            centerZ + distance * 0.6 // Higher Z for birds-eye view
+            centerX + cornerOffset,   // Slightly towards right
+            centerY + cornerOffset,   // Slightly towards front
+            centerZ + distance * 0.9  // Higher Z for stronger top-down look
           ]
           
           console.log('Setting camera position:', newCameraPosition, 'for bounds:', result.bounds, 'buildPlateSize:', buildPlateSize)

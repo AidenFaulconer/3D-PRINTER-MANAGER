@@ -17,7 +17,7 @@ import usePrintersStore from '../stores/printersStore'
 import { loadGlobalParameters } from '../utils/ParameterTracker'
 
 // 2D Canvas Visualization Component
-const BedMesh2D = ({ meshData, colorScheme, showValues, showGrid, screwPitch }) => {
+const BedMesh2D = ({ meshData, colorScheme, showValues, showGrid, screwPitch, getNotchRecommendations }) => {
   const canvasRef = useRef(null)
   const [dimensions, setDimensions] = useState({ width: 600, height: 400 })
 
@@ -66,6 +66,7 @@ const BedMesh2D = ({ meshData, colorScheme, showValues, showGrid, screwPitch }) 
     }
   }, [meshData])
 
+
   const getColor = useCallback((value, min, max, range) => {
     if (range === 0) return '#808080'
     
@@ -112,7 +113,8 @@ const BedMesh2D = ({ meshData, colorScheme, showValues, showGrid, screwPitch }) 
       row.forEach((value, j) => {
         if (value !== null) {
           const x = j * cellWidth
-          const y = i * cellHeight
+          // Front of bed (i=0) appears at bottom of visualization
+          const y = (gridSize.y - 1 - i) * cellHeight
           
           // Fill cell with color
           ctx.fillStyle = getColor(value, minZ, maxZ, range)
@@ -163,30 +165,60 @@ const BedMesh2D = ({ meshData, colorScheme, showValues, showGrid, screwPitch }) 
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h4 className="font-semibold">2D Heatmap</h4>
-        <div className="text-sm text-gray-600">
-          Range: {processedData.minZ.toFixed(3)}mm to {processedData.maxZ.toFixed(3)}mm
+        <div className="flex items-center gap-2">
+          <div className="text-xs text-gray-600">
+            {processedData.minZ.toFixed(2)} to {processedData.maxZ.toFixed(2)}mm
+          </div>
+          <div className="text-xs text-gray-700 bg-gray-50 border border-gray-200 px-2 py-1 rounded flex items-center gap-2">
+            <span className="font-medium">Bed Mesh:</span>
+            <span className="font-mono">{processedData.gridSize.x}×{processedData.gridSize.y}</span>
+            <span>•</span>
+            <span className="font-mono">Range: {processedData.minZ.toFixed(3)} to {processedData.maxZ.toFixed(3)}mm</span>
+            <span>•</span>
+            <span className="font-mono">Last: N/A</span>
+            <span className="ml-2">Per 1/8 turn:</span>
+            <span className="text-blue-700 font-mono">↻ +{(screwPitch/8).toFixed(3)}mm</span>
+            <span className="text-red-700 font-mono">↺ −{(screwPitch/8).toFixed(3)}mm</span>
+          </div>
         </div>
       </div>
       {/* Knob guidance (compact) */}
       <div className="text-[11px] text-gray-700 bg-gray-50 border border-gray-200 rounded px-2 py-1 inline-flex items-center gap-3">
         <span className="font-medium">Per 1/8 turn:</span>
         <span className="flex items-center gap-1">
-          <span className="text-green-700">↺</span>
+          <span className="text-blue-700">↻</span>
           <span>+{(screwPitch/8).toFixed(3)}mm</span>
         </span>
         <span className="flex items-center gap-1">
-          <span className="text-red-700">↻</span>
+          <span className="text-red-700">↺</span>
           <span>−{(screwPitch/8).toFixed(3)}mm</span>
         </span>
       </div>
       
+      
       <div className="flex justify-center">
+        <div className="relative">
         <canvas
           ref={canvasRef}
           width={dimensions.width}
           height={dimensions.height}
           className="border border-gray-300 rounded"
         />
+          {/* Front/Back labels */}
+          <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 text-sm font-medium text-gray-700 bg-white px-2 py-1 rounded shadow">
+            Front of Bed
+          </div>
+          <div className="absolute top-1 left-1/2 transform -translate-x-1/2 text-sm font-medium text-gray-700 bg-white px-2 py-1 rounded shadow">
+            Back of Bed
+          </div>
+          {/* Left/Right labels */}
+          <div className="absolute left-2 top-1/2 transform -translate-y-1/2 text-sm font-medium text-gray-700 bg-white px-2 py-1 rounded shadow writing-mode-vertical">
+            Left
+          </div>
+          <div className="absolute right-2 top-1/2 transform -translate-y-1/2 text-sm font-medium text-gray-700 bg-white px-2 py-1 rounded shadow writing-mode-vertical">
+            Right
+          </div>
+        </div>
       </div>
       
       {/* Color scale legend */}
@@ -205,12 +237,18 @@ const BedMesh2D = ({ meshData, colorScheme, showValues, showGrid, screwPitch }) 
 }
 
 // 3D Visualization Component
-const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
+const BedMesh3D = ({ meshData, showWireframe, showPoints, getNotchRecommendations, screwPitch }) => {
   const meshRef = useRef()
 
-  const { geometry, points, zMin, zMax } = useMemo(() => {
+  // Get bed size from printer settings
+  const bedSize = usePrintersStore(state => {
+    const activePrinter = state.printers.find(p => p.id === state.activePrinterId)
+    return activePrinter?.bedSize || { x: 220, y: 220, z: 250 }
+  })
+
+  const { geometry, points, zMin, zMax, bedDimensions } = useMemo(() => {
     if (!meshData || !meshData.mesh || meshData.mesh.length === 0) {
-      return { geometry: null, points: [], zMin: 0, zMax: 0 }
+      return { geometry: null, points: [], zMin: 0, zMax: 0, bedDimensions: { x: bedSize.x / 100, y: bedSize.y / 100 } }
     }
 
     // Check if mesh is already in 2D array format
@@ -241,15 +279,22 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
     const zMin = Math.min(...meshArray.flat())
     const zMax = Math.max(...meshArray.flat())
     
-    // Create geometry for the mesh surface
-    const geometry = new THREE.PlaneGeometry(maxJ, maxI, maxJ, maxI)
+    // Calculate bed dimensions in 3D space (normalize to actual bed size)
+    const bedDimensions = {
+      x: bedSize.x / 100, // Convert mm to 3D units (scale down by 100)
+      y: bedSize.y / 100
+    }
+    
+    // Create geometry for the mesh surface - use actual bed dimensions
+    const geometry = new THREE.PlaneGeometry(bedDimensions.x, bedDimensions.y, maxI, maxJ)
     const positions = geometry.attributes.position.array
     const colors = new Float32Array((maxI + 1) * (maxJ + 1) * 3)
     
-    // Set Z positions based on mesh data
+    // Set Z positions based on mesh data, flip Y so i=0 is at front (bottom from camera)
     for (let i = 0; i <= maxI; i++) {
       for (let j = 0; j <= maxJ; j++) {
-        const vertexIndex = i * (maxJ + 1) + j
+        const flippedI = maxI - i
+        const vertexIndex = flippedI * (maxJ + 1) + j
         if (vertexIndex < positions.length / 3) {
           positions[vertexIndex * 3 + 2] = meshArray[i][j] * 10 // Scale for visibility
           // Heatmap color based on normalized Z (blue low -> red high)
@@ -268,20 +313,18 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
     geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
     geometry.computeVertexNormals()
 
-    // Create points array for visualization
+    // Create points array for visualization (scaled to bed dimensions, with Y flipped)
     const points = []
     for (let i = 0; i <= maxI; i++) {
       for (let j = 0; j <= maxJ; j++) {
-        points.push({
-          x: j,
-          y: i,
-          z: meshArray[i][j]
-        })
+        const xPos = -bedDimensions.x / 2 + (j / maxJ) * bedDimensions.x
+        const yPos = -bedDimensions.y / 2 + ((maxI - i) / maxI) * bedDimensions.y
+        points.push({ x: xPos, y: yPos, z: meshArray[i][j] })
       }
     }
 
-    return { geometry, points, zMin, zMax }
-  }, [meshData])
+    return { geometry, points, zMin, zMax, bedDimensions }
+  }, [meshData, bedSize])
 
   if (!geometry) {
     return (
@@ -304,64 +347,262 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex items-center justify-between">
         <h4 className="font-semibold">3D Surface</h4>
-        <div className="text-sm text-gray-600 bg-gray-100 px-3 py-1 rounded">
-          <div>Grid: {maxI + 1}×{maxJ + 1} points</div>
-          <div>Z Range: {minZ.toFixed(3)} to {maxZ.toFixed(3)} mm</div>
-          <div>Scale: 1 unit = 1mm (Z ×{scaleFactor} for visibility)</div>
+        <div className="text-xs text-gray-700 bg-gray-50 border border-gray-200 px-2 py-1 rounded flex items-center gap-2">
+          <span className="font-mono">{maxI + 1}×{maxJ + 1}</span>
+          <span>•</span>
+          <span className="font-mono">{bedSize.x}×{bedSize.y}mm</span>
+          <span>•</span>
+          <span className="font-mono">{minZ.toFixed(2)} to {maxZ.toFixed(2)}mm</span>
+        </div>
+        <div className="ml-2 text-xs text-gray-700 bg-gray-50 border border-gray-200 px-2 py-1 rounded flex items-center gap-2">
+          <span className="font-medium">Bed Mesh:</span>
+          <span className="font-mono">{maxI + 1}×{maxJ + 1}</span>
+          <span>•</span>
+          <span className="font-mono">Range: {minZ.toFixed(3)} to {maxZ.toFixed(3)}mm</span>
+          <span>•</span>
+          <span className="font-mono">Last: N/A</span>
+          <span className="ml-2">Per 1/8 turn:</span>
+          <span className="text-blue-700 font-mono">↻ +{(screwPitch/8).toFixed(3)}mm</span>
+          <span className="text-red-700 font-mono">↺ −{(screwPitch/8).toFixed(3)}mm</span>
         </div>
       </div>
       <div className="h-[500px] border border-gray-300 rounded relative">
-        <Canvas camera={{ position: [6, 6, 10], fov: 50 }}>
+        <Canvas camera={{ position: [12, 12, 18], fov: 50 }}>
           <ambientLight intensity={0.6} />
           <directionalLight position={[5, 5, 5]} intensity={0.8} />
           
-          {/* Grid lines like Klipper */}
-          <gridHelper args={[10, 20, '#cccccc', '#cccccc']} />
+          {/* Custom grid lines matching mesh vertices exactly */}
+          <group rotation={[-Math.PI / 2, 0, 0]}>
+            {/* Horizontal grid lines */}
+            {Array.from({ length: maxI + 1 }, (_, i) => (
+              <line key={`h-${i}`}>
+                <bufferGeometry>
+                  <bufferAttribute
+                    attach="attributes-position"
+                    count={2}
+                    array={new Float32Array([
+                      -bedDimensions.x / 2, -bedDimensions.y / 2 + (i / maxI) * bedDimensions.y, 0,
+                      bedDimensions.x / 2, -bedDimensions.y / 2 + (i / maxI) * bedDimensions.y, 0
+                    ])}
+                    itemSize={3}
+                  />
+                </bufferGeometry>
+                <lineBasicMaterial color="#cccccc" />
+              </line>
+            ))}
+            {/* Vertical grid lines */}
+            {Array.from({ length: maxJ + 1 }, (_, j) => (
+              <line key={`v-${j}`}>
+                <bufferGeometry>
+                  <bufferAttribute
+                    attach="attributes-position"
+                    count={2}
+                    array={new Float32Array([
+                      -bedDimensions.x / 2 + (j / maxJ) * bedDimensions.x, -bedDimensions.y / 2, 0,
+                      -bedDimensions.x / 2 + (j / maxJ) * bedDimensions.x, bedDimensions.y / 2, 0
+                    ])}
+                    itemSize={3}
+                  />
+                </bufferGeometry>
+                <lineBasicMaterial color="#cccccc" />
+              </line>
+            ))}
+          </group>
           
           {/* Scale Reference - 1mm cube for reference */}
-          <mesh position={[4, 4, 0]}>
-            <boxGeometry args={[0.1, 0.1, 0.1]} />
+          <mesh position={[bedDimensions.x * 0.4, bedDimensions.y * 0.4, 0]}>
+            <boxGeometry args={[0.01, 0.01, 0.01]} />
             <meshStandardMaterial color="#666666" transparent opacity={0.7} />
           </mesh>
-          <Text position={[4.2, 4, 0]} fontSize={0.15} color="#666666" rotation={[-Math.PI / 2, 0, 0]}>
+          <Text position={[bedDimensions.x * 0.42, bedDimensions.y * 0.4, 0]} fontSize={0.15} color="#666666" rotation={[-Math.PI / 2, 0, 0]}>
             1mm
           </Text>
           
-          {/* Colored XYZ Axes - Positioned at top-left corner */}
-          {/* X Axis - Red */}
-          <mesh position={[-4, 4, 0]}>
-            <cylinderGeometry args={[0.02, 0.02, 1.5, 8]} />
-            <meshStandardMaterial color="#ff0000" />
-          </mesh>
-          <mesh position={[-2.5, 4, 0]} rotation={[0, 0, Math.PI / 2]}>
-            <coneGeometry args={[0.08, 0.15, 8]} />
-            <meshStandardMaterial color="#ff0000" />
-          </mesh>
+          {/* Scale Rulers - Positioned away from bed mesh */}
+          {/* X-Axis Ruler (Red) - Positioned below the bed */}
+          <group position={[0, -bedDimensions.y * 0.5 - 1, 0]}>
+            {/* Main ruler line */}
+            <line>
+              <bufferGeometry>
+                <bufferAttribute
+                  attach="attributes-position"
+                  count={2}
+                  array={new Float32Array([
+                    -bedDimensions.x * 0.5, 0, 0,
+                    bedDimensions.x * 0.5, 0, 0
+                  ])}
+                  itemSize={3}
+                />
+              </bufferGeometry>
+              <lineBasicMaterial color="#ff0000" linewidth={3} />
+            </line>
+            
+            {/* Ruler ticks and labels */}
+            {Array.from({ length: Math.floor(bedDimensions.x / 10) + 1 }, (_, i) => {
+              const x = -bedDimensions.x * 0.5 + i * 10
+              const isMajorTick = i % 5 === 0
+              const tickHeight = isMajorTick ? 0.2 : 0.1
+              
+              return (
+                <group key={`x-tick-${i}`}>
+                  {/* Tick mark */}
+                  <line>
+                    <bufferGeometry>
+                      <bufferAttribute
+                        attach="attributes-position"
+                        count={2}
+                        array={new Float32Array([
+                          x, -tickHeight, 0,
+                          x, tickHeight, 0
+                        ])}
+                        itemSize={3}
+                      />
+                    </bufferGeometry>
+                    <lineBasicMaterial color="#ff0000" linewidth={isMajorTick ? 2 : 1} />
+                  </line>
+                  
+                  {/* Label for major ticks */}
+                  {isMajorTick && (
+                    <Text 
+                      position={[x, -0.4, 0]} 
+                      fontSize={0.15} 
+                      color="#ff0000" 
+                      rotation={[0, 0, 0]}
+                      anchorX="center"
+                      anchorY="middle"
+                    >
+                      {i * 10}
+                    </Text>
+                  )}
+                </group>
+              )
+            })}
+          </group>
           
-          {/* Y Axis - Green */}
-          <mesh position={[-4, 4, 0]} rotation={[0, 0, Math.PI / 2]}>
-            <cylinderGeometry args={[0.02, 0.02, 1.5, 8]} />
-            <meshStandardMaterial color="#00ff00" />
-          </mesh>
-          <mesh position={[-4, 2.5, 0]} rotation={[0, 0, 0]}>
-            <coneGeometry args={[0.08, 0.15, 8]} />
-            <meshStandardMaterial color="#00ff00" />
-          </mesh>
+          {/* Y-Axis Ruler (Green) - Positioned to the left of the bed */}
+          <group position={[-bedDimensions.x * 0.5 - 1, 0, 0]}>
+            {/* Main ruler line */}
+            <line>
+              <bufferGeometry>
+                <bufferAttribute
+                  attach="attributes-position"
+                  count={2}
+                  array={new Float32Array([
+                    0, -bedDimensions.y * 0.5, 0,
+                    0, bedDimensions.y * 0.5, 0
+                  ])}
+                  itemSize={3}
+                />
+              </bufferGeometry>
+              <lineBasicMaterial color="#00ff00" linewidth={3} />
+            </line>
+            
+            {/* Ruler ticks and labels */}
+            {Array.from({ length: Math.floor(bedDimensions.y / 10) + 1 }, (_, i) => {
+              const y = -bedDimensions.y * 0.5 + i * 10
+              const isMajorTick = i % 5 === 0
+              const tickHeight = isMajorTick ? 0.2 : 0.1
+              
+              return (
+                <group key={`y-tick-${i}`}>
+                  {/* Tick mark */}
+                  <line>
+                    <bufferGeometry>
+                      <bufferAttribute
+                        attach="attributes-position"
+                        count={2}
+                        array={new Float32Array([
+                          -tickHeight, y, 0,
+                          tickHeight, y, 0
+                        ])}
+                        itemSize={3}
+                      />
+                    </bufferGeometry>
+                    <lineBasicMaterial color="#00ff00" linewidth={isMajorTick ? 2 : 1} />
+                  </line>
+                  
+                  {/* Label for major ticks */}
+                  {isMajorTick && (
+                    <Text 
+                      position={[-0.4, y, 0]} 
+                      fontSize={0.15} 
+                      color="#00ff00" 
+                      rotation={[0, 0, 0]}
+                      anchorX="center"
+                      anchorY="middle"
+                    >
+                      {i * 10}
+                    </Text>
+                  )}
+                </group>
+              )
+            })}
+          </group>
           
-          {/* Z Axis - Blue */}
-          <mesh position={[-4, 4, 0]} rotation={[Math.PI / 2, 0, 0]}>
-            <cylinderGeometry args={[0.02, 0.02, 1, 8]} />
-            <meshStandardMaterial color="#0000ff" />
-          </mesh>
-          <mesh position={[-4, 4, 0.5]} rotation={[0, 0, 0]}>
-            <coneGeometry args={[0.08, 0.15, 8]} />
-            <meshStandardMaterial color="#0000ff" />
-          </mesh>
+          {/* Z-Axis Ruler (Blue) - Positioned to the right of the bed, rotated 90 degrees to be parallel with Z-up */}
+          <group position={[bedDimensions.x * 0.5 + 1, -bedDimensions.y * 0.5, 0]} rotation={[0, 0, Math.PI / 2]}>
+            {/* Main ruler line - extends from bottom of bed into negative range */}
+            <line>
+              <bufferGeometry>
+                <bufferAttribute
+                  attach="attributes-position"
+                  count={2}
+                  array={new Float32Array([
+                    -0.5, 0, 0,
+                    2.5, 0, 0
+                  ])}
+                  itemSize={3}
+                />
+              </bufferGeometry>
+              <lineBasicMaterial color="#0000ff" linewidth={3} />
+            </line>
+            
+            {/* Ruler ticks and labels - includes negative range */}
+            {Array.from({ length: 31 }, (_, i) => {
+              const x = (i - 5) * 0.1 // Start from -0.5, go to 2.5
+              const isMajorTick = i % 5 === 0
+              const tickHeight = isMajorTick ? 0.2 : 0.1
+              
+              return (
+                <group key={`z-tick-${i}`}>
+                  {/* Tick mark */}
+                  <line>
+                    <bufferGeometry>
+                      <bufferAttribute
+                        attach="attributes-position"
+                        count={2}
+                        array={new Float32Array([
+                          x, -tickHeight, 0,
+                          x, tickHeight, 0
+                        ])}
+                        itemSize={3}
+                      />
+                    </bufferGeometry>
+                    <lineBasicMaterial color="#0000ff" linewidth={isMajorTick ? 2 : 1} />
+                  </line>
+                  
+                  {/* Label for major ticks */}
+                  {isMajorTick && (
+                    <Text 
+                      position={[x, 0.3, 0]} 
+                      fontSize={0.15} 
+                      color="#0000ff" 
+                      rotation={[0, 0, 0]}
+                      anchorX="center"
+                      anchorY="middle"
+                    >
+                      {x.toFixed(1)}
+                    </Text>
+                  )}
+                </group>
+              )
+            })}
+          </group>
           
           {/* Bed mesh surface */}
-          <mesh ref={meshRef} geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.3, 0]}>
+          <mesh ref={meshRef} geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
             <meshStandardMaterial
               vertexColors
               wireframe={showWireframe}
@@ -373,15 +614,64 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
           
           {/* Mesh points */}
           {showPoints && points.map((point, index) => (
-            <mesh key={index} position={[point.x - 2.5, point.y - 2.5, point.z * 10]} rotation={[-Math.PI / 2, 0, 0]}>
+            <mesh key={index} position={[point.x, point.y, point.z * 10]}>
               <sphereGeometry args={[0.05]} />
               <meshStandardMaterial color="#ef4444" />
             </mesh>
           ))}
+
+          {/* Directional Labels - Positioned parallel to the grid */}
+          {/* Front of Bed (bottom in 2D view) */}
+          <Text 
+            position={[0, -bedDimensions.y * 0.5 - 0.2, 0.1]} 
+            fontSize={0.25} 
+            color="#1f2937" 
+            rotation={[0, 0, 0]}
+            anchorX="center"
+            anchorY="middle"
+          >
+            Front of Bed
+          </Text>
+          
+          {/* Back of Bed (top in 2D view) */}
+          <Text 
+            position={[0, bedDimensions.y * 0.5 + 0.2, 0.1]} 
+            fontSize={0.25} 
+            color="#1f2937" 
+            rotation={[0, 0, 0]}
+            anchorX="center"
+            anchorY="middle"
+          >
+            Back of Bed
+          </Text>
+          
+          {/* Left Side */}
+          <Text 
+            position={[-bedDimensions.x * 0.5 - 0.2, 0, 0.1]} 
+            fontSize={0.25} 
+            color="#1f2937" 
+            rotation={[0, 0, -Math.PI / 2]}
+            anchorX="center"
+            anchorY="middle"
+          >
+            Left
+          </Text>
+          
+          {/* Right Side */}
+          <Text 
+            position={[bedDimensions.x * 0.5 + 0.2, 0, 0.1]} 
+            fontSize={0.25} 
+            color="#1f2937" 
+            rotation={[0, 0, Math.PI / 2]}
+            anchorX="center"
+            anchorY="middle"
+          >
+            Right
+          </Text>
           
           {/* Wireframe overlay when not in wireframe mode */}
           {!showWireframe && (
-            <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.3, 0]}>
+            <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
               <meshBasicMaterial 
                 color="#000000" 
                 wireframe={true}
@@ -401,16 +691,6 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
             target={[0, -0.3, 0]}
           />
           
-          {/* Colored Axis Labels - Positioned at top-left corner */}
-          <Text position={[-2.2, 4, 0]} fontSize={0.25} color="#ff0000" rotation={[-Math.PI / 2, 0, 0]}>
-            X
-          </Text>
-          <Text position={[-4, 2.2, 0]} fontSize={0.25} color="#00ff00" rotation={[-Math.PI / 2, 0, 0]}>
-            Y
-          </Text>
-          <Text position={[-4, 4, 0.7]} fontSize={0.25} color="#0000ff">
-            Z
-          </Text>
         </Canvas>
         
         {/* Visual Scale Indicator - Left Side */}
@@ -460,6 +740,8 @@ const BedMesh3D = ({ meshData, showWireframe, showPoints }) => {
           </div>
         </div>
       </div>
+      
+      {/* Legend removed; content combined into Bed Leveling Details below */}
     </div>
   )
 }
@@ -531,6 +813,51 @@ const BedMeshVisualization = ({ showStatus = true, showActions = true }) => {
     range: printerSettings.bedLeveling.range || 0
   } : null
 
+  // Calculate notch recommendations for each corner
+  const getNotchRecommendations = useMemo(() => {
+    if (!meshData || !screwPitch) return null;
+    
+    const { mesh } = meshData;
+    // If screwPitch is small (like 0.063), treat it as per 1/8 turn and scale up to a full turn
+    const mmPerTurn = screwPitch < 0.2 ? screwPitch * 8 : screwPitch;
+    
+    // Get corner values
+    const gridY = mesh.length;
+    const gridX = mesh[0]?.length || 0;
+    
+    // Align corner naming with 2D view where front is the bottom row (i = gridY - 1)
+    const corners = [
+      { name: 'Front Left', value: mesh[gridY - 1]?.[0], row: gridY - 1, col: 0 },
+      { name: 'Front Right', value: mesh[gridY - 1]?.[gridX - 1], row: gridY - 1, col: gridX - 1 },
+      { name: 'Back Left', value: mesh[0]?.[0], row: 0, col: 0 },
+      { name: 'Back Right', value: mesh[0]?.[gridX - 1], row: 0, col: gridX - 1 }
+    ].filter(corner => corner.value !== null && corner.value !== undefined);
+    
+    if (corners.length === 0) return null;
+    
+    // Calculate average height for reference
+    const avgHeight = mesh.flat().filter(v => typeof v === 'number').reduce((sum, val) => sum + val, 0) / mesh.flat().filter(v => typeof v === 'number').length;
+    
+    return corners.map(corner => {
+      const deviation = corner.value - avgHeight; // mm relative to average
+      const turns = mmPerTurn > 0 ? Math.abs(deviation) / mmPerTurn : 0; // full turns
+      const direction = deviation > 0 ? 'lower' : 'raise';
+      // High values need to be lowered (↻), low values raised (↺)
+      const icon = deviation > 0 ? '↻' : '↺';
+      const color = deviation > 0 ? 'text-blue-700' : 'text-red-700';
+
+      return {
+        ...corner,
+        deviation,
+        turns,
+        turnsText: turns.toFixed(1),
+        direction,
+        icon,
+        color
+      };
+    });
+  }, [meshData, screwPitch]);
+
   return (
     <div className="space-y-4">
       {/* Header with controls */}
@@ -540,22 +867,13 @@ const BedMeshVisualization = ({ showStatus = true, showActions = true }) => {
           <div className="text-sm text-gray-600">
             {meshData ? (
               <>
-                {meshData.gridSize.x}×{meshData.gridSize.y} grid • 
-                Range: {meshData.min.toFixed(3)}mm to {meshData.max.toFixed(3)}mm • 
-                {hasMeshData ? (
-                  <>Last updated: {bedMesh.timestamp ? new Date(bedMesh.timestamp).toLocaleTimeString() : 'Unknown'}</>
-                ) : (
-                  <>Data from printer settings</>
-                )}
               </>
             ) : (
               'No mesh data available'
             )}
           </div>
           <div className="mt-1 text-[11px] text-gray-700">
-            <span className="mr-2">Per 1/8 turn:</span>
-            <span className="mr-3"><span className="text-green-700">↺</span> +{(screwPitch/8).toFixed(3)}mm</span>
-            <span><span className="text-red-700">↻</span> −{(screwPitch/8).toFixed(3)}mm</span>
+            {/* Per 1/8 turn removed here to avoid duplication; shown in inline summary and details */}
           </div>
         </div>
         
@@ -715,6 +1033,8 @@ const BedMeshVisualization = ({ showStatus = true, showActions = true }) => {
             </>
           )}
         </div>
+
+        {/* Inline compact summary removed from this row per request */}
       </div>
 
       {/* Visualization */}
@@ -726,39 +1046,91 @@ const BedMeshVisualization = ({ showStatus = true, showActions = true }) => {
             showValues={showValues}
             showGrid={showGrid}
             screwPitch={screwPitch}
+            getNotchRecommendations={getNotchRecommendations}
           />
         ) : (
           <BedMesh3D 
             meshData={meshData}
             showWireframe={showWireframe}
             showPoints={showPoints}
+            getNotchRecommendations={getNotchRecommendations}
+            screwPitch={screwPitch}
           />
         )}
       </div>
 
-      {/* Mesh statistics */}
+      {/* Unified Bed Mesh Details (combined with legend) */}
       {meshData && (
-        <div className="bg-gray-50 rounded-lg p-3">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+        <div className="bg-white rounded-lg border border-gray-200 p-2">
+          <h4 className="text-sm font-semibold mb-1 text-gray-800">Bed Leveling Details</h4>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-2">
+            {/* Legend & Orientation (combined) */}
+            <div className="space-y-1">
+              <h5 className="text-xs font-medium text-gray-700">Legend & Orientation</h5>
+              <div className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded px-1 py-0.5">
+                <div className="grid grid-cols-2 gap-1">
             <div>
-              <span className="text-gray-600 text-xs">Min Height:</span>
-              <div className="font-mono text-sm">{meshData.min.toFixed(3)}mm</div>
+                    <div className="font-medium text-gray-700 mb-0.5">Colors</div>
+                    <div>🔴 Red = Too close</div>
+                    <div>🔵 Blue = Too far</div>
+                    <div>⚪ White = Level</div>
             </div>
             <div>
-              <span className="text-gray-600 text-xs">Max Height:</span>
-              <div className="font-mono text-sm">{meshData.max.toFixed(3)}mm</div>
+                    <div className="font-medium text-gray-700 mb-0.5">Orientation</div>
+                    <div>• Front = Bottom</div>
+                    <div>• Back = Top</div>
+                    <div>• Left/Right = Labels</div>
             </div>
-            <div>
-              <span className="text-gray-600 text-xs">Range:</span>
-              <div className="font-mono text-sm">{meshData.range.toFixed(3)}mm</div>
             </div>
-            <div>
-              <span className="text-gray-600 text-xs">Points:</span>
-              <div className="font-mono text-sm">{meshData.mesh.length}</div>
+              </div>
+            </div>
+            {/* Knob Adjustment Guide */}
+            <div className="space-y-1">
+              <h5 className="text-xs font-medium text-gray-700">Knob Adjustment Guide</h5>
+              <div className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded px-1 py-0.5">
+                <div className="font-medium mb-0.5">Per 1/8 turn:</div>
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-0.5">
+                    <span className="text-blue-700">↻</span>
+                    <span>+{(screwPitch/8).toFixed(3)}mm</span>
+                  </span>
+                  <span className="flex items-center gap-0.5">
+                    <span className="text-red-700">↺</span>
+                    <span>−{(screwPitch/8).toFixed(3)}mm</span>
+                  </span>
+                </div>
+                <div className="mt-0.5 text-xs text-gray-500">
+                  <div><strong>Reading:</strong> 🔴 Red=Lower(↻) 🔵 Blue=Raise(↺)</div>
+                  <div><strong>Orientation:</strong> Front at bottom</div>
+                </div>
+              </div>
+            </div>
+            
+            {/* Corner Adjustments */}
+            {getNotchRecommendations && getNotchRecommendations.length > 0 && (
+              <div className="space-y-1">
+                <h5 className="text-xs font-medium text-gray-700">Corner Adjustments</h5>
+                <div className="bg-blue-50 border border-blue-200 rounded px-1 py-0.5">
+                  <div className="grid grid-cols-2 gap-1 text-xs">
+                    {getNotchRecommendations.map((corner, idx) => (
+                      <div key={idx} className="flex items-center justify-between">
+                        <span className="font-medium text-gray-600 text-xs">{corner.name}:</span>
+                        <span className={`${corner.color} font-bold text-xs`}>
+                          {corner.icon} {corner.turnsText} turns
+                        </span>
+                      </div>
+                    ))}
             </div>
           </div>
         </div>
       )}
+            
+            {/* Mesh Statistics moved into 3D header chip to avoid duplication */}
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

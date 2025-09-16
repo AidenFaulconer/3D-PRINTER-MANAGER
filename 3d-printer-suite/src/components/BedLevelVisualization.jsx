@@ -686,8 +686,8 @@ const BedLevelVisualization = React.memo(() => {
               <div className="mt-3 text-xs text-yellow-700 dark:text-yellow-300">
                 <p><strong>Instructions:</strong></p>
                 <ul className="list-disc list-inside space-y-1 mt-1">
-                  <li>↻ Clockwise = Lower the bed (turn knob clockwise)</li>
-                  <li>↺ Counter-clockwise = Raise the bed (turn knob counter-clockwise)</li>
+                  <li>↻ Clockwise = Raise the bed (turn knob clockwise)</li>
+                  <li>↺ Counter-clockwise = Lower the bed (turn knob counter-clockwise)</li>
                   <li>Make small adjustments and re-run bed leveling to check progress</li>
                   <li>Target: All corners within ±0.1mm of each other</li>
                 </ul>

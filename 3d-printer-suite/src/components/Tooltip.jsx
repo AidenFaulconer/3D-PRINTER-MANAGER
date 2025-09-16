@@ -6,6 +6,7 @@ const Tooltip = ({ content, children, position = 'top', clickable = false }) => 
   const [isClicked, setIsClicked] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
   const [tooltipPosition, setTooltipPosition] = useState({ top: 0, left: 0 })
+  const [hasPosition, setHasPosition] = useState(false)
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
   const triggerRef = useRef(null)
   const tooltipRef = useRef(null)
@@ -58,11 +59,13 @@ const Tooltip = ({ content, children, position = 'top', clickable = false }) => 
       }
 
       setTooltipPosition({ top, left })
+      setHasPosition(true)
     }
   }
 
   useEffect(() => {
     if (isVisible) {
+      setHasPosition(false)
       updatePosition()
       const handleScroll = () => updatePosition()
       const handleResize = () => updatePosition()
@@ -158,7 +161,7 @@ const Tooltip = ({ content, children, position = 'top', clickable = false }) => 
       </div>
       
       {/* Preview tooltip on hover - only show if not clicked and content is long enough */}
-      {showPreview && !isClicked && content && content.length > 60 && (
+      {showPreview && !isClicked && !isVisible && content && content.length > 60 && (
         <div
           ref={previewRef}
           className="fixed z-40 px-2 py-1 text-xs text-white bg-gray-700 rounded shadow-lg max-w-xs whitespace-nowrap transition-all duration-150 ease-out"
@@ -182,7 +185,16 @@ const Tooltip = ({ content, children, position = 'top', clickable = false }) => 
           style={{
             top: tooltipPosition.top,
             left: tooltipPosition.left,
-            transform: 'translate(-50%, -50%)',
+            // Align transform based on desired side
+            transform: (
+              position === 'top' || position === 'bottom'
+                ? 'translateX(-50%)'
+                : position === 'left' || position === 'right'
+                  ? 'translateY(-50%)'
+                  : 'translateX(-50%)'
+            ),
+            opacity: hasPosition ? 1 : 0,
+            pointerEvents: hasPosition ? 'auto' : 'none'
           }}
         >
           <div className="whitespace-pre-wrap">{content}</div>

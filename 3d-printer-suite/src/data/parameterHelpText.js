@@ -27,6 +27,12 @@ export const parameterHelpText = {
   // Extruder E-Steps Parameters
   'currentEsteps': 'Current E-steps per millimeter setting from your printer. This is used as a starting point for the calibration. Found in your printer\'s firmware settings (usually M92 E command).',
   
+  // Added: extruder-esteps step specific keys
+  'extrudeDistance': 'Requested extrusion distance for the test (commonly 100mm). Used along with measured remaining filament to compute new E-steps.',
+  'useFilamentDiameter': 'If enabled, uses your filament diameter in calculations to improve accuracy.',
+  'remainingFilament': 'After extruding, measure how much filament remains from your mark. Used to compute the actual extruded length.',
+  'calculatedEsteps': 'Computed E-steps result based on your measurements. Apply this value to update the printer.',
+  
   'extrudeLength': 'Length of filament to extrude during the test. 100mm is standard and provides good accuracy. Make sure you have enough filament loaded.',
   
   'extrudeSpeed': 'Speed at which to extrude filament during the test. Slower speeds (50-100 mm/min) are more accurate. Faster speeds may cause under-extrusion and inaccurate results.',

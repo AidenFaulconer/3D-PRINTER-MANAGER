@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ArrowUpRight, ArrowDownLeft } from 'lucide-react'
 import useSerialStore from '../../stores/serialStore'
 
 const steps = [1, 10, 100]
@@ -63,27 +64,45 @@ export default function MovementControl({ send, requestPosition, lastPosition })
         <div className="space-y-2">
           <div className="text-sm font-medium text-gray-800">X Axis</div>
           <div className="flex items-center space-x-2">
-            <button className="px-3 py-2 bg-gray-100 rounded" onClick={() => jog('X', -1)}>−X</button>
+            <button className="px-3 py-2 bg-gray-100 rounded flex items-center space-x-1" onClick={() => jog('X', -1)}>
+              <ArrowLeft className="w-4 h-4" />
+              <span>−X</span>
+            </button>
             <div className="text-sm text-gray-600">{pos.x.toFixed?.(2) ?? pos.x}</div>
-            <button className="px-3 py-2 bg-gray-100 rounded" onClick={() => jog('X', 1)}>+X</button>
+            <button className="px-3 py-2 bg-gray-100 rounded flex items-center space-x-1" onClick={() => jog('X', 1)}>
+              <ArrowRight className="w-4 h-4" />
+              <span>+X</span>
+            </button>
           </div>
         </div>
         {/* Y */}
         <div className="space-y-2">
           <div className="text-sm font-medium text-gray-800">Y Axis</div>
           <div className="flex items-center space-x-2">
-            <button className="px-3 py-2 bg-gray-100 rounded" onClick={() => jog('Y', -1)}>−Y</button>
+            <button className="px-3 py-2 bg-gray-100 rounded flex items-center space-x-1" onClick={() => jog('Y', -1)}>
+              <ArrowDown className="w-4 h-4" />
+              <span>−Y</span>
+            </button>
             <div className="text-sm text-gray-600">{pos.y.toFixed?.(2) ?? pos.y}</div>
-            <button className="px-3 py-2 bg-gray-100 rounded" onClick={() => jog('Y', 1)}>+Y</button>
+            <button className="px-3 py-2 bg-gray-100 rounded flex items-center space-x-1" onClick={() => jog('Y', 1)}>
+              <ArrowUp className="w-4 h-4" />
+              <span>+Y</span>
+            </button>
           </div>
         </div>
         {/* Z */}
         <div className="space-y-2">
           <div className="text-sm font-medium text-gray-800">Z Axis</div>
           <div className="flex items-center space-x-2">
-            <button className="px-3 py-2 bg-gray-100 rounded" onClick={() => jog('Z', -1)}>−Z</button>
+            <button className="px-3 py-2 bg-gray-100 rounded flex items-center space-x-1" onClick={() => jog('Z', -1)}>
+              <ArrowDown className="w-4 h-4" />
+              <span>−Z</span>
+            </button>
             <div className="text-sm text-gray-600">{pos.z.toFixed?.(2) ?? pos.z}</div>
-            <button className="px-3 py-2 bg-gray-100 rounded" onClick={() => jog('Z', 1)}>+Z</button>
+            <button className="px-3 py-2 bg-gray-100 rounded flex items-center space-x-1" onClick={() => jog('Z', 1)}>
+              <ArrowUp className="w-4 h-4" />
+              <span>+Z</span>
+            </button>
           </div>
         </div>
       </div>

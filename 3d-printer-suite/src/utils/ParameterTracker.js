@@ -124,8 +124,13 @@ export const loadParametersFromSettings = async (stepId) => {
         try {
           // Send command to get current value
           await sendCommand(command)
-          // Note: In a real implementation, you'd parse the response
-          // For now, we'll use the default values
+          
+          // For M92 command, wait a bit for the response to be processed
+          if (command === 'M92') {
+            await new Promise(resolve => setTimeout(resolve, 500))
+            // The response will be processed by the serial store and stored in global parameters
+            // We'll get the value from global parameters instead of parsing here
+          }
         } catch (error) {
           console.warn(`Failed to load ${command}:`, error)
         }

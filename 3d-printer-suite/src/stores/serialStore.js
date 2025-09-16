@@ -102,7 +102,7 @@ const useSerialStore = create(
         
         for (const line of lines) {
           try {
-            // M92 - Steps per unit
+            // M92 - Steps per unit (full format with X, Y, Z, E)
             const m92Match = line.match(/M92\s+X(\d+(?:\.\d+)?)\s+Y(\d+(?:\.\d+)?)\s+Z(\d+(?:\.\d+)?)\s+E(\d+(?:\.\d+)?)/i)
             if (m92Match) {
               settings.stepsPerUnit = {
@@ -110,6 +110,28 @@ const useSerialStore = create(
                 y: parseFloat(m92Match[2]),
                 z: parseFloat(m92Match[3]),
                 e: parseFloat(m92Match[4])
+              }
+              continue
+            }
+
+            // M92 - Steps per unit (E only format)
+            const m92EMatch = line.match(/M92\s+E(\d+(?:\.\d+)?)/i)
+            if (m92EMatch) {
+              if (!settings.stepsPerUnit) {
+                settings.stepsPerUnit = { x: 80, y: 80, z: 400, e: 93 } // Default values
+              }
+              settings.stepsPerUnit.e = parseFloat(m92EMatch[1])
+              continue
+            }
+
+            // M92 - Steps per unit (echo format)
+            const m92EchoMatch = line.match(/echo:Steps per unit:\s*X:(\d+(?:\.\d+)?)\s*Y:(\d+(?:\.\d+)?)\s*Z:(\d+(?:\.\d+)?)\s*E:(\d+(?:\.\d+)?)/i)
+            if (m92EchoMatch) {
+              settings.stepsPerUnit = {
+                x: parseFloat(m92EchoMatch[1]),
+                y: parseFloat(m92EchoMatch[2]),
+                z: parseFloat(m92EchoMatch[3]),
+                e: parseFloat(m92EchoMatch[4])
               }
               continue
             }

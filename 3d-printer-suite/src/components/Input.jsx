@@ -25,6 +25,7 @@ const Input = forwardRef(({
   step,
   disabled = false,
   required = false,
+  readOnly = false,
   helpText,
   ...props
 }, ref) => {
@@ -51,18 +52,18 @@ const Input = forwardRef(({
 
   // Handle input events
   const handleChange = (e) => {
-    const newValue = e.target.value
+    const newValue = type === 'checkbox' ? e.target.checked : e.target.value
     if (isControlled) {
-      controlledOnChange?.(e)
+      controlledOnChange?.(newValue)
     } else {
       setValue(newValue)
     }
   }
 
   const handleInput = (e) => {
-    const newValue = e.target.value
+    const newValue = type === 'checkbox' ? e.target.checked : e.target.value
     if (isControlled) {
-      controlledOnInput?.(e)
+      controlledOnInput?.(newValue)
     } else {
       setValueImmediate(newValue)
     }
@@ -73,19 +74,24 @@ const Input = forwardRef(({
   const hasError = !isValid && error
   const inputClasses = `
     w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-    ${hasError ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300'}
-    ${disabled ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'}
+    ${hasError 
+      ? 'border-red-500 focus:ring-red-500 focus:border-red-500 dark:border-red-400 dark:focus:ring-red-400 dark:focus:border-red-400' 
+      : 'border-gray-300 dark:border-gray-600'}
+    ${disabled 
+      ? 'bg-gray-100 dark:bg-gray-700 cursor-not-allowed' 
+      : 'bg-white dark:bg-gray-800'}
+    text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500
     ${className}
   `.trim()
 
   const errorClasses = `
-    text-red-600 text-sm mt-1
+    text-red-600 dark:text-red-400 text-sm mt-1
     ${errorClassName}
   `.trim()
 
   const labelClasses = `
-    block text-sm font-medium text-gray-700 mb-1
-    ${hasError ? 'text-red-700' : ''}
+    block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1
+    ${hasError ? 'text-red-700 dark:text-red-400' : ''}
   `.trim()
 
   return (
@@ -98,21 +104,37 @@ const Input = forwardRef(({
         </label>
       )}
       
-      <input
-        ref={ref}
-        type={type}
-        value={displayValue || ''}
-        onChange={handleChange}
-        onInput={handleInput}
-        placeholder={placeholder}
-        min={min}
-        max={max}
-        step={step}
-        disabled={disabled}
-        required={required}
-        className={inputClasses}
-        {...props}
-      />
+      {type === 'select' ? (
+        <select
+          ref={ref}
+          value={displayValue || ''}
+          onChange={handleChange}
+          disabled={disabled}
+          required={required}
+          className={inputClasses}
+        >
+          {(props.options || []).map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      ) : (
+        <input
+          ref={ref}
+          type={type}
+          {...(type === 'checkbox' ? { checked: !!displayValue } : { value: displayValue || '' })}
+          onChange={handleChange}
+          onInput={handleInput}
+          placeholder={placeholder}
+          min={min}
+          max={max}
+          step={step}
+          disabled={disabled}
+          required={required}
+          readOnly={readOnly}
+          className={inputClasses}
+          {...props}
+        />
+      )}
       
       {hasError && (
         <div className={errorClasses}>

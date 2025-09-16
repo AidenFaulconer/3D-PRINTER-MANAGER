@@ -45,7 +45,8 @@ export const calibrationSteps = [
         min: 100,
         max: 1000,
         step: 50,
-        required: true
+        required: true,
+        helpText: 'Speed at which the probe moves during bed leveling. Slower speeds are more accurate but take longer.'
       },
       {
         type: 'number',
@@ -55,7 +56,8 @@ export const calibrationSteps = [
         min: 3,
         max: 30,
         step: 1,
-        required: true
+        required: true,
+        helpText: 'Number of probe points along the X-axis. More points provide better accuracy but take longer.'
       },
       {
         type: 'number',
@@ -65,7 +67,8 @@ export const calibrationSteps = [
         min: 3,
         max: 30,
         step: 1,
-        required: true
+        required: true,
+        helpText: 'Number of probe points along the Y-axis. More points provide better accuracy but take longer.'
       },
       {
         type: 'number',
@@ -75,13 +78,15 @@ export const calibrationSteps = [
         min: -5,
         max: 5,
         step: 0.01,
-        required: true
+        required: true,
+        helpText: 'Distance between the probe trigger point and the nozzle tip. Negative values move the nozzle closer to the bed.'
       },
       {
         type: 'checkbox',
         label: 'Enable Bed Heating',
         key: 'enableBedHeating',
-        defaultValue: true
+        defaultValue: true,
+        helpText: 'Heat the bed during leveling to account for thermal expansion. Recommended for accurate results.'
       },
       {
         type: 'number',
@@ -91,7 +96,8 @@ export const calibrationSteps = [
         min: 0,
         max: 120,
         step: 5,
-        required: true
+        required: true,
+        helpText: 'Target bed temperature for leveling. Use your typical printing temperature for best results.'
       }
     ],
     gcode: (inputValues) => {
@@ -177,7 +183,38 @@ export const calibrationSteps = [
         min: 150,
         max: 280,
         step: 5,
-        required: true
+        required: true,
+        helpText: 'Target temperature for hotend PID tuning. Use your typical printing temperature.'
+      },
+      {
+        type: 'number',
+        label: 'Hotend PID - P',
+        key: 'hotendPidP',
+        defaultValue: '',
+        min: 0,
+        step: 0.01,
+        required: false,
+        helpText: 'Optional: Manually set hotend PID P (M301 P...). Leave blank to skip.'
+      },
+      {
+        type: 'number',
+        label: 'Hotend PID - I',
+        key: 'hotendPidI',
+        defaultValue: '',
+        min: 0,
+        step: 0.01,
+        required: false,
+        helpText: 'Optional: Manually set hotend PID I (M301 I...). Leave blank to skip.'
+      },
+      {
+        type: 'number',
+        label: 'Hotend PID - D',
+        key: 'hotendPidD',
+        defaultValue: '',
+        min: 0,
+        step: 0.01,
+        required: false,
+        helpText: 'Optional: Manually set hotend PID D (M301 D...). Leave blank to skip.'
       },
       {
         type: 'number',
@@ -187,7 +224,38 @@ export const calibrationSteps = [
         min: 0,
         max: 120,
         step: 5,
-        required: true
+        required: true,
+        helpText: 'Target temperature for bed PID tuning. Use your typical printing temperature.'
+      },
+      {
+        type: 'number',
+        label: 'Bed PID - P',
+        key: 'bedPidP',
+        defaultValue: '',
+        min: 0,
+        step: 0.01,
+        required: false,
+        helpText: 'Optional: Manually set bed PID P (M304 P...). Leave blank to skip.'
+      },
+      {
+        type: 'number',
+        label: 'Bed PID - I',
+        key: 'bedPidI',
+        defaultValue: '',
+        min: 0,
+        step: 0.01,
+        required: false,
+        helpText: 'Optional: Manually set bed PID I (M304 I...). Leave blank to skip.'
+      },
+      {
+        type: 'number',
+        label: 'Bed PID - D',
+        key: 'bedPidD',
+        defaultValue: '',
+        min: 0,
+        step: 0.01,
+        required: false,
+        helpText: 'Optional: Manually set bed PID D (M304 D...). Leave blank to skip.'
       },
       {
         type: 'number',
@@ -197,7 +265,8 @@ export const calibrationSteps = [
         min: 3,
         max: 20,
         step: 1,
-        required: true
+        required: true,
+        helpText: 'Number of heating/cooling cycles for PID tuning. More cycles provide better accuracy but take longer.'
       },
       {
         type: 'checkbox',
@@ -207,18 +276,39 @@ export const calibrationSteps = [
       }
     ],
     gcode: (inputValues) => {
-      const { hotendTemp, bedTemp, cycles, includeBed } = inputValues
-      let gcode = `; PID Autotune for ${hotendTemp}°C hotend, ${bedTemp}°C bed, ${cycles} cycles\n`
-      
-      // Hotend PID tune
-      gcode += `M303 E0 S${hotendTemp} C${cycles}\n`
-      
-      // Bed PID tune (if enabled)
-      if (includeBed) {
+      const { hotendTemp, bedTemp, cycles, includeBed, hotendPidP, hotendPidI, hotendPidD, bedPidP, bedPidI, bedPidD } = inputValues
+      let gcode = `; PID Autotune / Manual PID\n`
+
+      // Optional manual hotend PID set
+      const hasHotendManual = hotendPidP !== '' && hotendPidI !== '' && hotendPidD !== ''
+      if (hasHotendManual) {
+        gcode += `; Set manual hotend PID\n`
+        gcode += `M301 P${Number(hotendPidP)} I${Number(hotendPidI)} D${Number(hotendPidD)}\n`
+      }
+
+      // Optional manual bed PID set
+      const hasBedManual = bedPidP !== '' && bedPidI !== '' && bedPidD !== ''
+      if (hasBedManual) {
+        gcode += `; Set manual bed PID\n`
+        gcode += `M304 P${Number(bedPidP)} I${Number(bedPidI)} D${Number(bedPidD)}\n`
+      }
+
+      // If no manual provided, run autotune sequences
+      if (!hasHotendManual) {
+        gcode += `; Hotend PID autotune\n`
+        gcode += `M303 E0 S${hotendTemp} C${cycles}\n`
+      }
+      if (includeBed && !hasBedManual) {
+        gcode += `; Bed PID autotune\n`
         gcode += `M303 E-1 S${bedTemp} C${cycles}\n`
       }
-      
-      gcode += `; After completion, save the new PID values with M500`
+
+      // Save if any changes
+      if (hasHotendManual || hasBedManual) {
+        gcode += `M500\n`
+      } else {
+        gcode += `; After completion, save the new PID values with M500\n`
+      }
       return gcode
     }
   },
@@ -261,7 +351,9 @@ export const calibrationSteps = [
         max: 200,
         step: 0.1,
         required: true,
-        isGlobalParam: true
+        isGlobalParam: true,
+        usePrinterSetting: 'stepsPerUnit.e',
+        helpText: 'Current E-steps value from your printer. This will be automatically loaded from the printer if connected.'
       },
       {
         type: 'number',
@@ -271,7 +363,8 @@ export const calibrationSteps = [
         min: 50,
         max: 200,
         step: 5,
-        required: true
+        required: true,
+        helpText: 'Amount of filament to extrude for the test. 100mm is recommended for accurate results.'
       },
       {
         type: 'number',
@@ -281,44 +374,79 @@ export const calibrationSteps = [
         min: 1.0,
         max: 3.0,
         step: 0.01,
-        required: true
+        required: true,
+        helpText: 'Actual diameter of your filament. Measure with calipers for best accuracy.'
       },
       {
         type: 'checkbox',
         label: 'Use Filament Diameter',
         key: 'useFilamentDiameter',
-        defaultValue: true
+        defaultValue: true,
+        helpText: 'Include filament diameter in the calculation for more accurate e-steps calibration.'
+      },
+      {
+        type: 'number',
+        label: 'Remaining Filament After Extrusion (mm)',
+        key: 'remainingFilament',
+        defaultValue: 0,
+        min: 0,
+        max: 1000,
+        step: 0.1,
+        required: false,
+        helpText: 'Measure the actual remaining filament length after extrusion'
+      },
+      {
+        type: 'number',
+        label: 'Calculated New E-Steps',
+        key: 'calculatedEsteps',
+        defaultValue: 0,
+        min: 50,
+        max: 300,
+        step: 0.1,
+        required: false,
+        helpText: 'Automatically calculated based on remaining filament measurement',
+        readOnly: true
       }
     ],
     gcode: (inputValues) => {
-      const { currentEsteps, extrudeDistance, filamentDiameter, useFilamentDiameter } = inputValues
+      const { currentEsteps, extrudeDistance, filamentDiameter, useFilamentDiameter, remainingFilament, calculatedEsteps } = inputValues
       let gcode = `; E-Steps Calibration\n`
       gcode += `; Current E-steps: ${currentEsteps}\n`
       gcode += `; Extrude distance: ${extrudeDistance}mm\n`
       
       if (useFilamentDiameter) {
         gcode += `; Filament diameter: ${filamentDiameter}mm\n`
-        gcode += `M92 E${currentEsteps}\n`
+      }
+      
+      gcode += `; Set current E-steps\n`
+      gcode += `M92 E${currentEsteps}\n`
+      gcode += `M500\n`
+      gcode += `; Heat hotend to 200°C first\n`
+      gcode += `M104 S200\n`
+      gcode += `M190 S60\n`
+      gcode += `; Extrude filament\n`
+      gcode += `G92 E0\n`
+      gcode += `G1 E${extrudeDistance} F100\n`
+      gcode += `; Wait for extrusion to complete\n`
+      gcode += `G4 P2000\n`
+      
+      if (remainingFilament && calculatedEsteps) {
+        gcode += `; Calibration Results:\n`
+        gcode += `; Remaining filament: ${remainingFilament}mm\n`
+        gcode += `; Actual extruded: ${extrudeDistance - remainingFilament}mm\n`
+        gcode += `; Calculated new E-steps: ${calculatedEsteps}\n`
+        gcode += `; Set new E-steps:\n`
+        gcode += `M92 E${calculatedEsteps}\n`
         gcode += `M500\n`
-        gcode += `; Heat hotend to 200°C first\n`
-        gcode += `M104 S200\n`
-        gcode += `M190 S60\n`
-        gcode += `; Extrude filament\n`
+        gcode += `; Test with new E-steps:\n`
         gcode += `G92 E0\n`
         gcode += `G1 E${extrudeDistance} F100\n`
-        gcode += `; Measure actual extrusion and calculate new E-steps\n`
-        gcode += `; New E-steps = (Current E-steps × Requested distance) ÷ Actual distance`
       } else {
-        gcode += `M92 E${currentEsteps}\n`
-        gcode += `M500\n`
-        gcode += `; Heat hotend to 200°C first\n`
-        gcode += `M104 S200\n`
-        gcode += `M190 S60\n`
-        gcode += `; Extrude filament\n`
-        gcode += `G92 E0\n`
-        gcode += `G1 E${extrudeDistance} F100\n`
-        gcode += `; Measure actual extrusion and calculate new E-steps\n`
-        gcode += `; New E-steps = (Current E-steps × Requested distance) ÷ Actual distance`
+        gcode += `; Instructions:\n`
+        gcode += `; 1. Measure the remaining filament length\n`
+        gcode += `; 2. Enter the remaining length in the input field\n`
+        gcode += `; 3. The new E-steps will be calculated automatically\n`
+        gcode += `; 4. Use the calculated value to update your printer settings\n`
       }
       
       return gcode
@@ -353,13 +481,26 @@ export const calibrationSteps = [
     inputs: [
       {
         type: 'number',
+        label: 'Bowden Tube Length (mm)',
+        key: 'bowdenTubeLength',
+        defaultValue: 700,
+        min: 100,
+        max: 2000,
+        step: 50,
+        required: false,
+        helpText: 'Length of your bowden tube for retraction distance estimation',
+        usePrinterSetting: 'bowdenTube.length'
+      },
+      {
+        type: 'number',
         label: 'Starting Retraction Distance (mm)',
         key: 'startRetraction',
         defaultValue: 5,
         min: 0,
         max: 20,
         step: 0.5,
-        required: true
+        required: true,
+        helpText: 'Starting retraction distance - will be estimated based on bowden tube length'
       },
       {
         type: 'number',
@@ -369,7 +510,8 @@ export const calibrationSteps = [
         min: 0,
         max: 20,
         step: 0.5,
-        required: true
+        required: true,
+        helpText: 'Final retraction distance to test - typically lower than starting distance'
       },
       {
         type: 'number',
@@ -379,7 +521,8 @@ export const calibrationSteps = [
         min: 2,
         max: 10,
         step: 1,
-        required: true
+        required: true,
+        helpText: 'Number of retraction distance increments to test between start and end values'
       },
       {
         type: 'number',
@@ -389,7 +532,8 @@ export const calibrationSteps = [
         min: 10,
         max: 100,
         step: 5,
-        required: true
+        required: true,
+        helpText: 'Speed at which the filament is retracted - higher speeds reduce stringing but may cause grinding'
       },
       {
         type: 'number',
@@ -399,13 +543,15 @@ export const calibrationSteps = [
         min: 0,
         max: 1,
         step: 0.1,
-        required: true
+        required: true,
+        helpText: 'Height to lift the nozzle during retraction moves - helps prevent stringing and collisions'
       },
       {
         type: 'checkbox',
         label: 'Enable Z-Hop',
         key: 'enableZHop',
-        defaultValue: true
+        defaultValue: true,
+        helpText: 'Enable Z-axis lifting during retraction moves to prevent stringing and improve print quality'
       },
       {
         type: 'number',
@@ -415,7 +561,8 @@ export const calibrationSteps = [
         min: 150,
         max: 280,
         step: 5,
-        required: true
+        required: true,
+        helpText: 'Hotend temperature for the retraction test - use recommended temperature for your filament'
       },
       {
         type: 'number',
@@ -425,7 +572,8 @@ export const calibrationSteps = [
         min: 0,
         max: 120,
         step: 5,
-        required: true
+        required: true,
+        helpText: 'Bed temperature for the retraction test - use recommended temperature for your filament'
       },
       {
         type: 'number',
@@ -435,7 +583,8 @@ export const calibrationSteps = [
         min: 20,
         max: 100,
         step: 5,
-        required: true
+        required: true,
+        helpText: 'Distance between retraction test towers - longer distances make stringing more visible'
       }
     ],
     gcode: async (inputValues) => {
@@ -744,6 +893,22 @@ export const calibrationSteps = [
     ],
     inputs: [
       {
+        type: 'select',
+        label: 'Material Preset',
+        key: 'materialPreset',
+        defaultValue: 'PLA',
+        options: [
+          { value: 'PLA', label: 'PLA' },
+          { value: 'PETG', label: 'PETG' },
+          { value: 'ABS', label: 'ABS' },
+          { value: 'ASA', label: 'ASA' },
+          { value: 'NYLON', label: 'Nylon' },
+          { value: 'PLA-CF', label: 'PLA-CF' },
+          { value: 'PETG-CF', label: 'PETG-CF' }
+        ],
+        helpText: 'Choose a filament type to auto-fill temperature ranges. You can still adjust values after choosing.'
+      },
+      {
         type: 'number',
         label: 'Start Temperature (°C)',
         key: 'startTemp',
@@ -767,10 +932,10 @@ export const calibrationSteps = [
         type: 'number',
         label: 'Temperature Step (°C)',
         key: 'tempStep',
-        defaultValue: 10,
-        min: 5,
+        defaultValue: 5,
+        min: 2,
         max: 20,
-        step: 5,
+        step: 1,
         required: true
       },
       {

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import ConnectionButton from './controls/ConnectionButton'
 import usePrintersStore from '../stores/printersStore'
+import { HelpTooltip } from './Tooltip'
 import useSerialStore from '../stores/serialStore'
 import { 
   loadGlobalParameters,
@@ -36,6 +37,11 @@ import Input from './Input'
 import { getParameterHelpText } from '../data/parameterHelpText'
 
 const Tabs = ['Instructions', 'Visuals', 'Configuration', 'Results']
+
+// Steps that do not produce printable toolpaths (prefer text view)
+const isNonPrintingStep = (stepId) => {
+  return stepId === 'pid-autotune' || stepId === 'bed-leveling' || stepId === 'extruder-esteps'
+}
 
 // Global parameters that should persist across all calibration steps
 const GLOBAL_PARAMETERS = {
@@ -197,6 +203,7 @@ const ControlSection = memo(({
                 <span className="text-sm text-gray-600 dark:text-gray-400">Preview Mode:</span>
                 <div className="flex items-center space-x-2">
                   <button
+                    type="button"
                     onClick={() => setGcodeViewMode('text')}
                     className={`px-3 py-1 rounded text-sm flex items-center space-x-1 ${
                       gcodeViewMode === 'text' 
@@ -207,7 +214,9 @@ const ControlSection = memo(({
                     <FileText className="w-4 h-4" />
                     <span>Text</span>
                   </button>
+                  {!isNonPrintingStep(step?.id) && (
                   <button
+                    type="button"
                     onClick={() => setGcodeViewMode('3d')}
                     className={`px-3 py-1 rounded text-sm flex items-center space-x-1 ${
                       gcodeViewMode === '3d' 
@@ -218,10 +227,11 @@ const ControlSection = memo(({
                     <Box className="w-4 h-4" />
                     <span>3D</span>
                   </button>
+                  )}
                 </div>
               </div>
               
-              {gcodeViewMode === 'text' ? (
+              {gcodeViewMode === 'text' || isNonPrintingStep(step?.id) ? (
                 <div className="bg-gray-900 text-gray-400 dark:text-gray-500 p-4 rounded-md overflow-x-auto">
                   <pre className="text-sm font-mono whitespace-pre-wrap">{generatedGcode}</pre>
                 </div>
@@ -288,8 +298,8 @@ const ConfigurationTab = memo(({
       {step.category === 'Movement' && step.id.includes('level') && (
         <>
           <div className="mb-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Bed Mesh Visualization</h3>
-            <BedMeshVisualization showStatus={true} showActions={true} />
+            {/* <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Bed Mesh Visualization</h3> */}
+            <BedMeshVisualization showStatus={false} showActions={true} />
           </div>
           <div className="h-px bg-gray-300 dark:bg-gray-600" />
         </>
@@ -330,6 +340,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
   const sendCommand = useSerialStore(state => state.sendCommand)
   const connect = useSerialStore(state => state.connect)
   const disconnect = useSerialStore(state => state.disconnect)
+  const printerSettings = useSerialStore(state => state.printerSettings)
 
   // Prevent re-renders if serial props haven't changed
   const serialProps = useMemo(() => ({ 
@@ -345,6 +356,9 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
   const activePrinter = usePrintersStore(state => state.printers.find(p => p.id === state.activePrinterId))
   const hasActivePrinter = usePrintersStore(state => !!state.printers.find(p => p.id === state.activePrinterId))
 
+  // State for global parameters
+  const [globalParams, setGlobalParams] = useState({})
+
   // Load global parameters when printer changes
   useEffect(() => {
     if (activePrinterId) {
@@ -354,6 +368,107 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
       console.log('Available global parameters for printer', activePrinterId, ':', globalParams)
     }
   }, [activePrinterId])
+
+  // Real-time sync with global parameters from serial store
+  useEffect(() => {
+    if (activePrinterId) {
+      const refreshGlobalParams = () => {
+        const currentGlobalParams = loadGlobalParameters(activePrinterId)
+        setGlobalParams(prev => {
+          // Only update if there are actual changes
+          const hasChanges = JSON.stringify(prev) !== JSON.stringify(currentGlobalParams)
+          if (hasChanges) {
+            console.log('Global parameters updated in real-time:', currentGlobalParams)
+            return currentGlobalParams
+          }
+          return prev
+        })
+      }
+
+      // Refresh immediately
+      refreshGlobalParams()
+
+      // Set up interval to check for changes every 2 seconds
+      const interval = setInterval(refreshGlobalParams, 2000)
+
+      return () => clearInterval(interval)
+    }
+  }, [activePrinterId])
+
+  // Update input values when global parameters change
+  useEffect(() => {
+    if (activePrinterId && step?.inputs && globalParams && Object.keys(globalParams).length > 0) {
+      const updatedInputValues = { ...inputValuesRef.current }
+      let hasUpdates = false
+
+      step.inputs.forEach(input => {
+        if (GLOBAL_PARAMETERS[input.key] && globalParams[input.key] !== undefined) {
+          const currentValue = updatedInputValues[input.key]
+          const globalValue = globalParams[input.key]
+          
+          if (currentValue !== globalValue) {
+            console.log(`Updating ${input.key} from ${currentValue} to ${globalValue} (global param)`)
+            updatedInputValues[input.key] = globalValue
+            hasUpdates = true
+          }
+        }
+      })
+
+      if (hasUpdates) {
+        console.log('Updating input values with latest global parameters:', updatedInputValues)
+        inputValuesRef.current = updatedInputValues
+        setInputValues(updatedInputValues)
+      }
+    }
+  }, [globalParams, activePrinterId, step?.inputs])
+
+  // Listen for printer settings changes and update global parameters immediately
+  useEffect(() => {
+    if (activePrinterId && printerSettings && Object.keys(printerSettings).length > 0) {
+      console.log('Printer settings changed, refreshing global parameters:', printerSettings)
+      
+      // Refresh global parameters immediately when printer settings change
+      const currentGlobalParams = loadGlobalParameters(activePrinterId)
+      setGlobalParams(currentGlobalParams)
+      
+      // Also update input values if this step has global parameters
+      if (step?.inputs) {
+        const updatedInputValues = { ...inputValuesRef.current }
+        let hasUpdates = false
+
+        step.inputs.forEach(input => {
+          if (GLOBAL_PARAMETERS[input.key] && currentGlobalParams[input.key] !== undefined) {
+            const currentValue = updatedInputValues[input.key]
+            const globalValue = currentGlobalParams[input.key]
+            
+            if (currentValue !== globalValue) {
+              console.log(`Immediate update: ${input.key} from ${currentValue} to ${globalValue}`)
+              updatedInputValues[input.key] = globalValue
+              hasUpdates = true
+            }
+          }
+          
+          // Special handling for calculatedEsteps - update when currentEsteps changes
+          if (input.key === 'calculatedEsteps' && currentGlobalParams.currentEsteps) {
+            const currentValue = updatedInputValues[input.key]
+            const globalValue = currentGlobalParams.currentEsteps
+            
+            if (currentValue !== globalValue) {
+              console.log(`Immediate update: ${input.key} from ${currentValue} to ${globalValue} (from currentEsteps)`)
+              updatedInputValues[input.key] = globalValue
+              hasUpdates = true
+            }
+          }
+        })
+
+        if (hasUpdates) {
+          console.log('Immediate input values update with latest global parameters:', updatedInputValues)
+          inputValuesRef.current = updatedInputValues
+          setInputValues(updatedInputValues)
+        }
+      }
+    }
+  }, [printerSettings, activePrinterId, step?.inputs])
 
   // Cleanup execution state when component unmounts or step changes
   useEffect(() => {
@@ -396,19 +511,127 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
   const resultsInitializedRef = useRef(false)
   const inputValuesInitializedRef = useRef(false)
   const inputValuesRef = useRef({})
+  // Track if certain fields were manually edited to avoid overwriting user input
+  const userEditedRef = useRef({ startRetraction: false })
+  // Track last estimated retraction to allow updating auto-filled values when bowden length changes
+  const lastEstimatedRetractionRef = useRef(undefined)
   
   const [inputValues, setInputValues] = useState({})
   const [inputUpdateCounter, setInputUpdateCounter] = useState(0)
   const [generatedGcode, setGeneratedGcode] = useState('')
   const [isCompleted, setIsCompleted] = useState(false)
-  const [globalParams, setGlobalParams] = useState({})
   const [showGcode, setShowGcode] = useState(false)
-  const [gcodeViewMode, setGcodeViewMode] = useState('3d') // 'text' or '3d'
+  const [gcodeViewMode, setGcodeViewMode] = useState(() => {
+    // Default to text view for non-printing steps
+    return isNonPrintingStep(step?.id) ? 'text' : '3d'
+  })
   const [checklist, setChecklist] = useState({})
   const [results, setResults] = useState({ measurements: {}, notes: '', photos: [] })
   const fileInputRef = useRef(null)
 
   const [showReport, setShowReport] = useState(false)
+  
+  // Update view mode when step changes
+  useEffect(() => {
+    if (isNonPrintingStep(step?.id) && gcodeViewMode !== 'text') {
+      setGcodeViewMode('text')
+    }
+  }, [step?.id, gcodeViewMode])
+
+  // Calculate new e-steps for extruder-esteps step
+  useEffect(() => {
+    console.log('E-steps calculation useEffect triggered', { 
+      stepId: step?.id, 
+      inputValues: inputValues,
+      remainingFilament: inputValues.remainingFilament,
+      currentEsteps: inputValues.currentEsteps,
+      extrudeDistance: inputValues.extrudeDistance
+    })
+    
+    if (step?.id === 'extruder-esteps') {
+      const currentEsteps = Number(inputValues.currentEsteps || 0)
+      const extrudeDistance = Number(inputValues.extrudeDistance || 0)
+      const remainingFilament = Number(inputValues.remainingFilament || 0)
+      
+      console.log('E-steps calculation inputs:', { currentEsteps, extrudeDistance, remainingFilament })
+      
+      if (currentEsteps > 0 && extrudeDistance > 0 && remainingFilament > 0) {
+        const actualExtruded = extrudeDistance - remainingFilament
+        const newEsteps = (currentEsteps * extrudeDistance) / actualExtruded
+        
+        console.log('Calculating new e-steps:', { actualExtruded, newEsteps })
+        
+        // Update the calculated e-steps in input values
+        const newValues = {
+          ...inputValues,
+          calculatedEsteps: Math.round(newEsteps * 10) / 10 // Round to 1 decimal place
+        }
+        inputValuesRef.current = newValues
+        setInputValues(newValues)
+        
+        console.log('Updated input values with calculated e-steps:', newValues)
+      } else if (currentEsteps > 0 && extrudeDistance > 0 && remainingFilament === 0) {
+        // If remaining filament is 0 or not entered, use current e-steps as calculated
+        const newValues = {
+          ...inputValues,
+          calculatedEsteps: currentEsteps
+        }
+        inputValuesRef.current = newValues
+        setInputValues(newValues)
+        console.log('Using current e-steps as calculated (no remaining filament entered):', newValues)
+      } else {
+        console.log('E-steps calculation conditions not met:', { 
+          currentEsteps, 
+          extrudeDistance, 
+          remainingFilament,
+          currentEstepsCheck: currentEsteps > 0,
+          extrudeDistanceCheck: extrudeDistance > 0,
+          remainingFilamentCheck: remainingFilament > 0
+        })
+      }
+    }
+  }, [inputValues.remainingFilament, inputValues.currentEsteps, inputValues.extrudeDistance, step?.id])
+
+  // Calculate retraction distance estimation for retraction-tuning step
+  useEffect(() => {
+    if (step?.id === 'retraction-tuning') {
+      const bowdenTubeLength = Number(inputValues.bowdenTubeLength || 0)
+      
+      if (bowdenTubeLength > 0) {
+        // Formula: Starting Retraction Distance ≈ (Bowden Tube Length in mm / 100) + 0.5 to 1 mm
+        const estimatedRetraction = (bowdenTubeLength / 100) + 0.5
+        const roundedEstimate = Math.round(estimatedRetraction * 10) / 10
+        
+        console.log('Retraction estimation:', { bowdenTubeLength, estimatedRetraction })
+        
+        // Update the starting retraction distance if user hasn't manually edited it
+        // or if it still matches the last auto-estimated value
+        const currentStartStr = inputValues.startRetraction
+        const currentStart = currentStartStr === '' || currentStartStr === undefined ? undefined : Number(currentStartStr)
+        const lastEstimated = lastEstimatedRetractionRef.current
+
+        const shouldAutoFill = (
+          !userEditedRef.current.startRetraction ||
+          (lastEstimated !== undefined && currentStart === lastEstimated) ||
+          currentStart === undefined
+        )
+
+        if (shouldAutoFill) {
+          const newValues = {
+            ...inputValues,
+            startRetraction: roundedEstimate
+          }
+          inputValuesRef.current = newValues
+          setInputValues(newValues)
+          lastEstimatedRetractionRef.current = roundedEstimate
+          console.log('Auto-filled startRetraction with estimated value:', roundedEstimate)
+        } else {
+          // Store the latest estimate without overwriting user edit
+          lastEstimatedRetractionRef.current = roundedEstimate
+        }
+      }
+    }
+  }, [inputValues.bowdenTubeLength, step?.id])
   
   // Get global execution state
   const activeExecution = useSerialStore(state => state.activeExecution)
@@ -451,9 +674,62 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
         
         const initialValues = {};
         step.inputs.forEach(input => {
-          // Priority: global parameters > step defaults
-          initialValues[input.key] = globalParams[input.key] || input.defaultValue;
+          // Priority: global parameters > printer settings > step defaults
+          let defaultValue = (globalParams[input.key] ?? input.defaultValue);
+          
+          // Load from printer settings if specified
+          if (input.usePrinterSetting && activePrinter?.printerSettings) {
+            const settingPath = input.usePrinterSetting.split('.')
+            let settingValue = activePrinter.printerSettings
+            for (const path of settingPath) {
+              settingValue = settingValue?.[path]
+            }
+            if (settingValue !== undefined) {
+              defaultValue = settingValue
+            }
+          }
+          
+          // Special handling for calculatedEsteps - use currentEsteps as default
+          if (input.key === 'calculatedEsteps' && (globalParams.currentEsteps ?? undefined) !== undefined) {
+            defaultValue = globalParams.currentEsteps
+          }
+          
+          initialValues[input.key] = defaultValue
         });
+        // If this is temperature-tower, immediately seed temps from the selected material preset
+        if (step.id === 'temperature-tower') {
+          const selectedPreset = (initialValues.materialPreset || 'PLA')
+          const settings = activePrinter?.printerSettings || {}
+          const materialHeating = settings.materialHeating || {}
+          const fallbackPresets = {
+            'PLA': { startTemp: 220, endTemp: 180, tempStep: 5, bedTemp: 60 },
+            'PETG': { startTemp: 250, endTemp: 210, tempStep: 5, bedTemp: 80 },
+            'ABS': { startTemp: 260, endTemp: 220, tempStep: 5, bedTemp: 100 },
+            'ASA': { startTemp: 260, endTemp: 220, tempStep: 5, bedTemp: 100 },
+            'NYLON': { startTemp: 270, endTemp: 240, tempStep: 5, bedTemp: 80 },
+            'PLA-CF': { startTemp: 215, endTemp: 185, tempStep: 5, bedTemp: 60 },
+            'PETG-CF': { startTemp: 250, endTemp: 220, tempStep: 5, bedTemp: 80 }
+          }
+          const key = String(selectedPreset).toLowerCase()
+          let printerPreset
+          if (materialHeating && materialHeating[key]) {
+            const mh = materialHeating[key]
+            printerPreset = {
+              startTemp: (mh.hotend || fallbackPresets[selectedPreset]?.startTemp || 220) + 10,
+              endTemp: (mh.hotend || fallbackPresets[selectedPreset]?.endTemp || 180) - 10,
+              tempStep: 5,
+              bedTemp: mh.bed || fallbackPresets[selectedPreset]?.bedTemp || 60
+            }
+          }
+          const chosen = printerPreset || fallbackPresets[selectedPreset]
+          if (chosen) {
+            initialValues.startTemp = chosen.startTemp
+            initialValues.endTemp = chosen.endTemp
+            initialValues.tempStep = chosen.tempStep
+            initialValues.bedTemp = chosen.bedTemp
+          }
+        }
+
         console.log('Initializing input values with global + defaults:', initialValues);
         setInputValues(initialValues);
         inputValuesRef.current = initialValues;
@@ -462,7 +738,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
     }
 
     // Initialize checklist if not already set
-    if (!Object.keys(checklist).length) {
+    if (checklist && !Object.keys(checklist).length) {
       if (stepData?.checklist) {
         setChecklist(stepData.checklist);
       } else if (step.checklist) {
@@ -531,15 +807,9 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
     }
   }, [step?.id])
 
-  if (!step) {
-    return (
-      <div className="text-center py-12">
-        <AlertCircle className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No Calibration Step Selected</h3>
-        <p className="text-gray-500 dark:text-gray-400 dark:text-gray-500">Please select a calibration step from the sidebar</p>
-      </div>
-    )
-  }
+  // Track last applied temp preset for temperature-tower
+  const lastAppliedPresetRef = useRef({ name: undefined, values: undefined })
+  const isApplyingPresetRef = useRef(false)
 
   const handleInputChange = useCallback((key, value) => {
     console.log(`handleInputChange called: ${key} = ${value}`)
@@ -552,6 +822,16 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
       inputValuesRef.current = newValues
       
       console.log('New input values:', newValues)
+      
+      // Mark manual edits so auto-estimation does not override them later
+      if (key === 'startRetraction') {
+        userEditedRef.current.startRetraction = true
+      }
+      // Mark manual edits for temperature tower fields
+      if (key === 'startTemp' || key === 'endTemp' || key === 'tempStep' || key === 'bedTemp') {
+        if (!userEditedRef.current.tempTower) userEditedRef.current.tempTower = {}
+        userEditedRef.current.tempTower[key] = true
+      }
       
         // Update global parameters if this is a global parameter
         if (activePrinterId && GLOBAL_PARAMETERS[key]) {
@@ -566,11 +846,26 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
           }))
         }
       
+      // Save bowden tube length to printer settings
+      if (key === 'bowdenTubeLength' && activePrinterId) {
+        console.log('Saving bowden tube length to printer settings:', value)
+        const { updatePrinterSettings } = usePrintersStore.getState()
+        updatePrinterSettings(activePrinterId, {
+          bowdenTube: {
+            ...activePrinter?.printerSettings?.bowdenTube,
+            length: Number(value)
+          }
+        })
+      }
+      
       return newValues
     })
     
-    // Force re-render by incrementing counter
+    // Avoid bumping counter (which triggers auto G-code regen) when just selecting material preset;
+    // the preset effect will set values in one batch and we'll regenerate after it finishes.
+    if (key !== 'materialPreset') {
     setInputUpdateCounter(prev => prev + 1)
+    }
   }, [activePrinterId, step.id])
 
   // Auto-regenerate G-code when inputs change (debounced)
@@ -578,7 +873,9 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
     let timer
     if (step?.gcode) {
       timer = setTimeout(() => {
+        if (!isApplyingPresetRef.current) {
         generateGcode()
+        }
       }, 300)
     }
     return () => { if (timer) clearTimeout(timer) }
@@ -809,6 +1106,23 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
     navigator.clipboard.writeText(generatedGcode).catch(()=>{})
   }
 
+  // Send calculated e-steps to printer
+  const sendCalculatedEsteps = useCallback(async () => {
+    const calculated = Number(inputValues.calculatedEsteps || 0)
+    if (calculated > 0) {
+      try {
+        const sendCommand = useSerialStore.getState().sendCommand
+        await sendCommand(`M92 E${calculated.toFixed(2)}`)
+        await sendCommand('M500') // Save to EEPROM
+        console.log('Sent calculated e-steps to printer:', calculated)
+        // You could add a success notification here
+      } catch (error) {
+        console.error('Failed to send e-steps to printer:', error)
+        // You could add an error notification here
+      }
+    }
+  }, [inputValues.calculatedEsteps])
+
   const getCategoryIcon = (category) => {
     switch (category) {
       case 'Temperature':
@@ -926,8 +1240,29 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
   ), [])
 
   const renderInput = useCallback((input) => {
-    const { type, label, key, defaultValue, min, max, step: stepValue, required } = input
+    const { type, label, key, defaultValue, min, max, step: stepValue, required, readOnly } = input
     const isGlobalParam = GLOBAL_PARAMETERS[key]
+
+    // If this is a read-only field, render it as a display value instead of an input
+    if (readOnly) {
+      const displayValue = inputValues[key] || defaultValue || ''
+      return (
+        <div key={key} className="space-y-1">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            {label}
+            {required && <span className="text-red-500 ml-1">*</span>}
+            {input.helpText && (
+              <HelpTooltip content={input.helpText} />
+            )}
+          </label>
+          <div className="relative">
+            <div className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 font-mono text-sm">
+              {displayValue ? Number(displayValue).toFixed(2) : '0.00'}
+            </div>
+          </div>
+        </div>
+      )
+    }
 
     // Validation function for this input
     const validateInput = (value) => {
@@ -955,6 +1290,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
         type={type}
         label={label}
         placeholder={input.placeholder}
+        options={input.options}
         min={min}
         max={max}
         step={stepValue}
@@ -966,7 +1302,11 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
           console.log('Store update for global parameter:', key, 'value:', value)
           handleInputChange(key, value)
         }}
-        initialValue={isGlobalParam ? '' : (inputValues[key] || defaultValue || '')}
+        value={isGlobalParam ? (globalParams[key] ?? '') : (inputValues[key] ?? defaultValue ?? '')}
+        onChange={(value) => {
+          console.log('Input change for parameter:', key, 'value:', value)
+          handleInputChange(key, value)
+        }}
         className={isGlobalParam ? 'border-blue-300 bg-blue-50' : ''}
         errorClassName="text-red-600"
         helpText={getParameterHelpText(key, step.id)}
@@ -984,6 +1324,74 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
     Promise.all(readers).then((images) => {
       setResults((prev) => ({ ...prev, photos: [...prev.photos, ...images] }))
     })
+  }
+
+  // Apply material presets for temperature-tower
+  useEffect(() => {
+    if (step?.id !== 'temperature-tower') return
+    const preset = inputValues.materialPreset
+
+    if (!preset) return
+
+    // Build defaults
+    const settings = activePrinter?.printerSettings || {}
+    const materialHeating = settings.materialHeating || {}
+
+    // Preset table
+    const fallbackPresets = {
+      'PLA': { startTemp: 220, endTemp: 180, tempStep: 5, bedTemp: 60 },
+      'PETG': { startTemp: 250, endTemp: 210, tempStep: 5, bedTemp: 80 },
+      'ABS': { startTemp: 260, endTemp: 220, tempStep: 5, bedTemp: 100 },
+      'ASA': { startTemp: 260, endTemp: 220, tempStep: 5, bedTemp: 100 },
+      'NYLON': { startTemp: 270, endTemp: 240, tempStep: 5, bedTemp: 80 },
+      'PLA-CF': { startTemp: 215, endTemp: 185, tempStep: 5, bedTemp: 60 },
+      'PETG-CF': { startTemp: 250, endTemp: 220, tempStep: 5, bedTemp: 80 }
+    }
+
+    // Try to use printer material defaults if present
+    let printerPreset
+    const key = preset.toLowerCase()
+    if (materialHeating && materialHeating[key]) {
+      const mh = materialHeating[key]
+      // Use hotend as mid of range if available, otherwise use provided
+      printerPreset = {
+        startTemp: (mh.hotend || fallbackPresets[preset]?.startTemp || 220) + 10,
+        endTemp: (mh.hotend || fallbackPresets[preset]?.endTemp || 180) - 10,
+        tempStep: 5,
+        bedTemp: mh.bed || fallbackPresets[preset]?.bedTemp || 60
+      }
+    }
+
+    const chosen = printerPreset || fallbackPresets[preset]
+    if (!chosen) return
+
+    // Always apply the preset values when selected
+    isApplyingPresetRef.current = true
+    const newValues = {
+      ...inputValues,
+      startTemp: chosen.startTemp,
+      endTemp: chosen.endTemp,
+      tempStep: chosen.tempStep,
+      bedTemp: chosen.bedTemp
+    }
+    inputValuesRef.current = newValues
+    setInputValues(newValues)
+    lastAppliedPresetRef.current = { name: preset, values: { ...chosen } }
+    // Release the gate on next tick and trigger a single regenerate
+    setTimeout(() => {
+      isApplyingPresetRef.current = false
+      setInputUpdateCounter(prev => prev + 1)
+    }, 0)
+  }, [step?.id, inputValues.materialPreset, activePrinter?.printerSettings])
+
+  if (!step) {
+    return (
+      <div className="text-center py-12">
+        <AlertCircle className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No Calibration Step Selected</h3>
+        <p className="text-gray-500 dark:text-gray-400 dark:text-gray-500">Please select a calibration step from the sidebar</p>
+      </div>
+    )
   }
 
   return (
@@ -1058,7 +1466,9 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
               key={tab}
               onClick={tabHandlers[tab]}
               className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === tab ? 'border-deep-900 text-blue-50 dark:text-blue-9000' : 'border-transparent text-gray-500 dark:text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:border-gray-600'
+                activeTab === tab
+                  ? 'border-blue-600 text-blue-700 dark:border-blue-400 dark:text-blue-200'
+                  : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-200'
               }`}
             >
               {tab}
@@ -1069,7 +1479,7 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
 
       {/* Pre-checklist gate for Configuration */}
       {activeTab === 'Configuration' && !canProceed && (
-        <div className="mb-4 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-sm text-light-800">
+        <div className="mb-4 p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-sm text-gray-800 dark:text-gray-200">
           Complete the pre-calibration checklist in the Instructions tab before proceeding.
         </div>
       )}
@@ -1221,30 +1631,97 @@ const CalibrationStep = memo(({ step = {}, onComplete }) => {
                 <input className="w-full border border-gray-300 dark:border-gray-600 rounded px-2 py-1" value={results.measurements.observation || ''} onChange={(e)=>setResults(prev=>({ ...prev, measurements: { ...prev.measurements, observation: e.target.value }}))} />
               </label>
             </div>
-            {/* Example: auto-calc for E-steps */}
+            {/* E-steps calculation display */}
             {step.id === 'extruder-esteps' && (
-              <div className="mt-3 text-sm text-gray-700 dark:text-gray-300">
-                <span className="font-medium">Helper:</span>{' '}
+              <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <div className="text-sm text-gray-700 dark:text-gray-300">
+                  <span className="font-medium">E-Steps Calculation:</span>
                 {(() => {
-                  const current = Number(inputValuesRef.current.currentEsteps || 0)
-                  const requested = Number(inputValuesRef.current.extrudeDistance || 0)
-                  const actual = Number(results.measurements.primary || 0)
-                  if (current > 0 && requested > 0 && actual > 0) {
-                    const newEsteps = (current * requested) / actual
+                    const current = Number(inputValues.currentEsteps || 0)
+                    const requested = Number(inputValues.extrudeDistance || 0)
+                    const remaining = Number(inputValues.remainingFilament || 0)
+                    const calculated = Number(inputValues.calculatedEsteps || 0)
+                    
+                    if (current > 0 && requested > 0) {
+                      const actualExtruded = remaining > 0 ? requested - remaining : requested
+                      const showCalculation = remaining > 0
+                      
                     return (
-                      <>
-                        Suggested E-steps: <span className="text-gray-800 dark:text-gray-200 font-medium">{newEsteps.toFixed(2)}</span>
+                        <div className="mt-2 space-y-1">
+                          <div>Current E-steps: <span className="font-mono">{current}</span></div>
+                          <div>Requested: <span className="font-mono">{requested}mm</span></div>
+                          {showCalculation && (
+                            <>
+                              <div>Remaining: <span className="font-mono">{remaining}mm</span></div>
+                              <div>Actual extruded: <span className="font-mono">{actualExtruded.toFixed(2)}mm</span></div>
+                            </>
+                          )}
+                          <div className="font-semibold text-blue-800 dark:text-blue-200">
+                            {showCalculation ? 'Calculated E-steps:' : 'Current E-steps:'} <span className="font-mono text-lg">{calculated.toFixed(2)}</span>
+                          </div>
+                          <div className="flex gap-2 mt-2">
                         <button
-                          className="ml-2 px-2 py-1 bg-accent-medium text-white rounded"
-                          onClick={() => setGeneratedGcode(`M92 E${newEsteps.toFixed(2)}\nM500`)}
+                              className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+                              onClick={() => setGeneratedGcode(`M92 E${calculated.toFixed(2)}\nM500`)}
                         >
-                          Generate Update G-code
+                              Generate G-code
                         </button>
-                      </>
+                            <button
+                              className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                              onClick={sendCalculatedEsteps}
+                            >
+                              Save to Printer
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    }
+                    return (
+                      <div className="mt-2 text-gray-600 dark:text-gray-400">
+                        Enter the current e-steps and extrude distance. Optionally enter remaining filament to calculate new e-steps.
+                      </div>
                     )
-                  }
-                  return <span>Enter actual extruded mm as Primary Measurement to calculate new E-steps.</span>
                 })()}
+                </div>
+              </div>
+            )}
+            
+            {/* Retraction estimation display */}
+            {step.id === 'retraction-tuning' && (
+              <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                <div className="text-sm text-gray-700 dark:text-gray-300">
+                  <span className="font-medium">Retraction Distance Estimation:</span>
+                  {(() => {
+                    const bowdenLength = Number(inputValues.bowdenTubeLength || 0)
+                    const startRetraction = Number(inputValues.startRetraction || 0)
+                    
+                    if (bowdenLength > 0) {
+                      const estimated = (bowdenLength / 100) + 0.5
+                      const roundedEstimate = Math.round(estimated * 10) / 10
+                      
+                      return (
+                        <div className="mt-2 space-y-1">
+                          <div>Bowden Tube Length: <span className="font-mono">{bowdenLength}mm</span></div>
+                          <div>Estimated Starting Distance: <span className="font-mono text-green-700 dark:text-green-300">{estimated.toFixed(1)}mm</span></div>
+                          <div>Current Starting Distance: <span className="font-mono">{startRetraction}mm</span></div>
+                          {startRetraction === roundedEstimate && (
+                            <div className="text-xs text-green-600 dark:text-green-400">
+                              ✓ Using estimated value based on bowden tube length
+                            </div>
+                          )}
+                          <div className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                            Formula: (Bowden Length ÷ 100) + 0.5mm
+                          </div>
+                        </div>
+                      )
+                    }
+                    return (
+                      <div className="mt-2 text-gray-600 dark:text-gray-400">
+                        Enter bowden tube length to get retraction distance estimation.
+                      </div>
+                    )
+                  })()}
+                </div>
               </div>
             )}
           </div>

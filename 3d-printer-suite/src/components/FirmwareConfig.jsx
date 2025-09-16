@@ -1011,6 +1011,96 @@ const FirmwareConfig = () => {
         </div>
       )}
 
+      {/* Diff View */}
+      {showDiffView && (
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+            <GitCompare className="h-5 w-5 mr-2" />
+            Configuration Differences
+          </h3>
+          
+          {basicConfigs.length > 0 || advancedConfigs.length > 0 ? (
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <h4 className="font-medium text-blue-900 mb-2">Current vs Default Configuration</h4>
+                <p className="text-blue-800 text-sm">
+                  This shows the differences between your uploaded configuration and the default Marlin settings.
+                </p>
+              </div>
+              
+              {/* Basic Configuration Differences */}
+              {basicConfigs.length > 0 && (
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-3">Configuration.h Changes</h4>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {basicConfigs.map((config, index) => (
+                      <div key={`basic-${config.name}-${index}`} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div className="flex-1">
+                          <div className="font-mono text-sm text-gray-900">{config.name}</div>
+                          <div className="text-xs text-gray-600 mt-1">{config.description}</div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm text-gray-600">Current:</span>
+                          <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-sm font-mono">
+                            {config.value || 'Enabled'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Advanced Configuration Differences */}
+              {advancedConfigs.length > 0 && (
+                <div>
+                  <h4 className="font-medium text-gray-900 mb-3">Configuration_adv.h Changes</h4>
+                  <div className="space-y-2 max-h-96 overflow-y-auto">
+                    {advancedConfigs.map((config, index) => (
+                      <div key={`advanced-${config.name}-${index}`} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div className="flex-1">
+                          <div className="font-mono text-sm text-gray-900">{config.name}</div>
+                          <div className="text-xs text-gray-600 mt-1">{config.description}</div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm text-gray-600">Current:</span>
+                          <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm font-mono">
+                            {config.value || 'Enabled'}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <div className="flex items-start">
+                  <AlertTriangle className="h-5 w-5 text-yellow-600 mr-2 mt-0.5" />
+                  <div>
+                    <h4 className="font-medium text-yellow-900">Important Notes</h4>
+                    <ul className="text-yellow-800 text-sm mt-1 space-y-1">
+                      <li>• Always backup your original configuration files before making changes</li>
+                      <li>• Test changes in a safe environment before applying to production</li>
+                      <li>• Some settings may require hardware modifications</li>
+                      <li>• Invalid configurations may prevent firmware compilation</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+              <h4 className="text-lg font-medium text-gray-900 mb-2">No Configuration Loaded</h4>
+              <p className="text-gray-600">
+                Upload your configuration files to see the differences.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Help Section */}
       {totalConfigs === 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
